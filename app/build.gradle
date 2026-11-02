@@ -16,8 +16,11 @@ plugins {
 // media3 把 -1 读成「没有上一首」并 seekToCurrentItem(0)。
 //
 // V1.0.2: 设置页加「检查更新」——拉 GitHub releases/latest 与本机版本比对，
-// 弹「更新内容公告」；仓库是私有的，所以同时加「访问令牌」设置项（留空则匿名
-// 请求，拿不到就明说原因）。
+// 弹「更新内容公告」。
+//
+// V1.1.4: 仓库已转公开，「访问令牌」设置项连同 UpdateChecker 的 token 参数一起
+// 删掉；设置页改为可折叠分组，新增「启动时自动检查更新」开关；删掉缺封面筛选与
+// 播放统计里的「不重复曲目」。
 //
 // V1.1.0: 一次大版本整理——在线搜索栈（jsengine/source/WebView 引擎）整体移除，
 // 主页改「正在听」优先、队列移除可撤销、缺封面筛、极光随封面主色、平板双栏；
@@ -37,8 +40,8 @@ plugins {
 // 均衡器和进度条同一套几何；monochrome 层同形状，系统主题着色不会走样。
 // V1.1.3: 主界面骨架换成「舞台 + 幕布」（ui/shell/LxShell.kt），顺带删掉一批
 // 零引用代码与三处死设置。包名与签名不变，可从 1.1.2 直接覆盖安装。
-ext.appVersionCode = 8
-ext.appVersionName = "1.1.3"
+ext.appVersionCode = 9
+ext.appVersionName = "1.1.4"
 
 android {
     namespace = "com.lxmusic.android"

@@ -22,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CreateNewFolder
-import androidx.compose.material.icons.outlined.ImageNotSupported
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
@@ -54,7 +53,6 @@ import com.lxmusic.android.local.LocalSort
 import com.lxmusic.android.local.MusicGroup
 import com.lxmusic.android.ui.MainViewModel
 import com.lxmusic.android.ui.components.Cover
-import com.lxmusic.android.ui.components.missingCoverBadge
 import com.lxmusic.android.ui.components.HintIconButton
 import com.lxmusic.android.ui.components.SearchBar
 import com.lxmusic.android.ui.components.SearchBarHeight
@@ -118,10 +116,6 @@ fun LocalScreen(viewModel: MainViewModel, onLongPress: (MusicInfo) -> Unit) {
             GroupChip("歌手", Icons.Default.Person, state.group == LocalGroup.ARTISTS, "按歌手分组浏览") {
                 viewModel.setLocalGroup(LocalGroup.ARTISTS)
             }
-            // V1.1.0: 缺封面筛——专辑图缺失的歌一眼找出来，方便补图。
-            GroupChip("缺封面", Icons.Outlined.ImageNotSupported, state.missingCoverOnly, "只看没有封面的歌曲") {
-                viewModel.setMissingCoverOnly(!state.missingCoverOnly)
-            }
         }
         Spacer(Modifier.height(OledTokens.spaceXs))
         // V1.1.0: 「正在听」的主角是"接着听"，不是列表。有历史时卡片放大成
@@ -160,9 +154,6 @@ fun LocalScreen(viewModel: MainViewModel, onLongPress: (MusicInfo) -> Unit) {
                                 onClick = { viewModel.playLocal(i) },
                                 onLongClick = { onLongPress(music) },
                                 active = music.id == nowPlayingId,
-                                modifier = if (music.img.isNullOrBlank()) {
-                                    Modifier.missingCoverBadge()
-                                } else Modifier,
                             )
                             // V6.0: 换成渐隐线，深色底上不再连成硬栅栏。
                             NeonHairline()

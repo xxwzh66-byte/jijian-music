@@ -76,14 +76,14 @@ data class AppSettings(
      */
     val eq: EqProfile = EqProfile.FLAT,
 
-    /** V1.0.2: GitHub 访问令牌。仓库为私有，匿名拉不到 releases；留空则匿名请求。 */
-    val updateToken: String = "",
-
     /**
      * V1.0.3: 上次成功发起「检查更新」的时间戳（毫秒）。
      * 启动静默检查用它节流到每 24h 一次；手动检查不节流。
      */
     val lastUpdateCheckAt: Long = 0L,
+
+    /** V1.1.4: 进入应用时自动检查更新。关掉之后只有设置页按钮会发起检查。 */
+    val autoCheckUpdates: Boolean = true,
 
     /** V1.1.0: 卡死看门狗阈值（毫秒）。默认值即 V6.1 调好的 8s/20s。 */
     val watchdogStallMs: Long = 8_000L,
@@ -173,11 +173,11 @@ class SettingsStore private constructor(context: Context) {
     /** V6.1: persist the equalizer curve so it survives an app restart. */
     fun setEq(profile: EqProfile) = edit { writeEq(it, profile) }
 
-    /** V1.0.2: GitHub 访问令牌（私有仓的 releases 要鉴权才能拉到）。 */
-    fun setUpdateToken(token: String) = edit { writeUpdateToken(it, token) }
-
     /** V1.0.3: 静默检查更新的节流时间戳（写入时机由调用方决定，这里只存）。 */
     fun setLastUpdateCheckAt(atMs: Long) = edit { it[KEY_LAST_UPDATE_CHECK] = atMs }
+
+    /** V1.1.4: 进应用时自动检查更新。 */
+    fun setAutoCheckUpdates(on: Boolean) = edit { it[KEY_AUTO_CHECK_UPDATES] = on }
 
     /** V1.1.0: 卡死看门狗阈值。 */
 
@@ -274,18 +274,10 @@ class SettingsStore private constructor(context: Context) {
             prefs[KEY_EQ_BASS] = s.eq.bass
             prefs[KEY_EQ_VIRTUALIZER] = s.eq.virtualizer
             prefs[KEY_EQ_LOUDNESS] = s.eq.loudnessMb
-            prefs[KEY_UPDATE_TOKEN] = s.updateToken
             prefs[KEY_LAST_UPDATE_CHECK] = s.lastUpdateCheckAt
+            prefs[KEY_AUTO_CHECK_UPDATES] = s.autoCheckUpdates
             prefs[KEY_WATCHDOG_STALL] = s.watchdogStallMs
             prefs[KEY_WATCHDOG_BUFFERING] = s.watchdogBufferingMs
-        }
-
-        /**
-         * V1.0.2: 访问令牌的写入侧，与 [writeEq] 同一个理由抽出来——
-         * 读写两侧键名拼错不报错，只是永远读回默认值。
-         */
-        internal fun writeUpdateToken(prefs: MutablePreferences, token: String) {
-            prefs[KEY_UPDATE_TOKEN] = token.trim()
         }
 
         private fun Preferences.toSettings(): AppSettings = AppSettings(
@@ -323,8 +315,8 @@ class SettingsStore private constructor(context: Context) {
                 virtualizer = this[KEY_EQ_VIRTUALIZER] ?: 0,
                 loudnessMb = this[KEY_EQ_LOUDNESS] ?: 0,
             ),
-            updateToken = this[KEY_UPDATE_TOKEN] ?: "",
             lastUpdateCheckAt = this[KEY_LAST_UPDATE_CHECK] ?: 0L,
+            autoCheckUpdates = this[KEY_AUTO_CHECK_UPDATES] ?: true,
             watchdogStallMs = this[KEY_WATCHDOG_STALL] ?: 8_000L,
             watchdogBufferingMs = this[KEY_WATCHDOG_BUFFERING] ?: 20_000L,
         )
@@ -354,10 +346,10 @@ class SettingsStore private constructor(context: Context) {
         internal val KEY_EQ_BASS = intPreferencesKey("eq_bass")
         internal val KEY_EQ_VIRTUALIZER = intPreferencesKey("eq_virtualizer")
         internal val KEY_EQ_LOUDNESS = intPreferencesKey("eq_loudness")
-        internal val KEY_UPDATE_TOKEN = stringPreferencesKey("update_token")
 
         /** V1.0.3: 启动静默检查更新的节流时间戳。 */
         internal val KEY_LAST_UPDATE_CHECK = longPreferencesKey("last_update_check_at")
+        internal val KEY_AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
         internal val KEY_WATCHDOG_STALL = longPreferencesKey("watchdog_stall_ms")
         internal val KEY_WATCHDOG_BUFFERING = longPreferencesKey("watchdog_buffering_ms")
         }

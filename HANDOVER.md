@@ -1,9 +1,9 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 8 / versionName "1.1.3"**
-> 报告版本：**V1.1.3**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 66 个 .kt；`app/src/test/java` 26 个 .kt / **230 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.1.3-vc8.apk`（release 签名，字节数以 build/apk 实测为准）
+> 交接版本：**versionCode 9 / versionName "1.1.4"**
+> 报告版本：**V1.1.4**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 66 个 .kt；`app/src/test/java` 26 个 .kt / **229 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.1.4-vc9.apk`（release 签名，字节数以 build/apk 实测为准）
 
 ---
 
@@ -60,7 +60,7 @@ $env:ANDROID_SDK_ROOT="D:\demo\android-sdk"
 
 - `:app:assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`
 - `:app:versionedApk` → `build/apk/jijian-music-<版本>-vc<号>-debug.apk`（**给用户的就是这个**，见第六节）
-- `:app:testDebugUnitTest` → 230 项单元测试
+- `:app:testDebugUnitTest` → 229 项单元测试
 
 ### 这台机器上没有的东西（重要）
 
@@ -147,7 +147,7 @@ Android 端曾经把这两块都用 headless WebView 复刻出来（两个 WebVi
 | `data/db/AppDatabase.kt` | Room **v5**。表：`song_list` / `playlist` / `favorite` / `play_history` / `play_event` / `local_track`（`user_api` v4→v5 迁移里 drop） |
 | `data/model/MusicInfo.kt` | 核心模型 `MusicInfo` / `QualityInfo` / `SongList` / `ListItem` |
 | `data/repo/MusicRepository.kt` | 所有 DAO 的门面；`logPlay` / `playRecords` 是统计功能的数据源 |
-| `data/settings/SettingsStore.kt` | DataStore；`AppSettings` 是**唯一设置真相**，28 个 KEY 常量（含 `record_stats`、6 个 `eq_*`、V1.0.2 的 `update_token` 与 V1.0.3 的 `last_update_check_at`） |
+| `data/settings/SettingsStore.kt` | DataStore；`AppSettings` 是**唯一设置真相**，29 个 KEY 常量（含 `record_stats`、6 个 `eq_*`、`last_update_check_at`、V1.1.4 的 `auto_check_updates`；V1.1.4 删掉了 `update_token`） |
 | `data/settings/EqProfile.kt` | 用户音调曲线的可持久化快照：enabled/preset/bands/bass/virtualizer/loudness；`encodeBands`/`decodeBands` 坏数据丢弃不抛 |
 | `data/stats/PlayStats.kt` | 播放统计纯逻辑：日/周/全部三档、直方图分桶、排行 |
 
@@ -168,7 +168,7 @@ Android 端曾经把这两块都用 headless WebView 复刻出来（两个 WebVi
 | 文件 | 职责 |
 |---|---|
 | `net/HttpBridge.kt` | OkHttp 封装：`execute(url, opts)` 返回 `HttpResult(statusCode/statusMessage/headersJson/raw)`，Gson 序列化 header，`followRedirects(true)`，默认 15s 超时 |
-| `net/UpdateChecker.kt`（V1.0.2） | 一次 HTTP 拉 `repos/{repo}/releases/latest`，解析成 `UpdateInfo(tagName/title/notes/url/apkName/apkSize)`；`compareVersions`/`isNewer` 处理 `v` 前缀、数字分段、预发布后缀排序。**私有仓匿名会 404**，错误信息引导用户在设置里填访问令牌 |
+| `net/UpdateChecker.kt`（V1.0.2） | 一次 HTTP 拉 `repos/{repo}/releases/latest`，解析成 `UpdateInfo(tagName/title/notes/url/apkName/apkSize)`；`compareVersions`/`isNewer` 处理 `v` 前缀、数字分段、预发布后缀排序。仓库是公开的，匿名请求即可（V1.1.4 删掉了访问令牌参数） |
 
 ### UI
 
@@ -275,7 +275,7 @@ V1.0.1 之前踩过的坑（**结论全部已被抽签语义取代，留作教�
 
 ```groovy
 ext.appVersionCode = 3
-ext.appVersionName = "1.1.3"
+ext.appVersionName = "1.1.4"
 ```
 
 改版本只改这两行，**不要**去动 `defaultConfig`。
@@ -286,7 +286,7 @@ QQ（及多数 IM 文件传输）**按「文件名 + 大小」去重**。此前�
 `app-debug.apk`，且相邻版本字节数相同，
 所以发新包给用户，QQ 认为「这个文件我已经有了」，**不认是新安装包**。
 
-`versionedApk` 把产物复制成 `jijian-music-1.1.3-vc8.apk`——文件名唯一，问题消失。
+`versionedApk` 把产物复制成 `jijian-music-1.1.4-vc9.apk`——文件名唯一，问题消失。
 
 ### GitHub Actions（V1.0.3 起）
 
@@ -394,7 +394,7 @@ python -X utf8 _x.py
 | 设置页加「检查更新」按钮 | 新增 `net/UpdateChecker.kt`：一次 HTTP 拉 `repos/{repo}/releases/latest`，解析成 `UpdateInfo`。`MainViewModel.checkForUpdates()` 里 `viewModelScope.launch { withContext(Dispatchers.IO) { ... } }`，`checkSeq` 递增驱动对话框只弹一次 | `UpdateCheckerTest`（11） |
 | 拉取当前 GitHub 版本并判断是否更新 | `UpdateChecker.compareVersions(a, b)` / `isNewer(remote, current)`：`v1.0.2` 与 `1.0.2` 等价、缺位补 0、数字分段**按数值比**（`1.0.10 > 1.0.9`）、预发布后缀字典比且「无后缀 > 有后缀」 | `UpdateCheckerTest`（6 个版本比较用例） |
 | 更新内容公告 | `UpdateDialog` 显示本机版本 / 最新版本 / 安装包大小 + release body（`notes`）；有 release 链接时给「前往下载」ACTION_VIEW。设置页「检查更新」行的副标题实时反映状态（IDLE / CHECKING / UP_TO_DATE / AVAILABLE / FAILED） | 实机点按 |
-| **私有仓拿不到数据** | 仓库 `private=True`，匿名 `/releases/latest` 返回 404。`UpdateChecker` 把 404 的文案写成「更新源不可达，或仓库为私有（可在「访问令牌」里填 GitHub 令牌）」，并新增 `SettingsStore` 的 `update_token` 键（V1.0.2，KEY 常量 26 → 27）持久化令牌 | `SettingsRoundTripTest`（+2：`theUpdateTokenSurvivesAWriteAndRead`、`aBlankUpdateTokenIsTheSameAsNone`） |
+| ~~私有仓拿不到数据~~ | V1.0.2 时的历史：仓库是私有的，匿名 `/releases/latest` 返回 404，于是加了「访问令牌」设置项。**V1.1.4 仓库转公开后这条与令牌一起删除**，现在匿名请求即可 | — |
 
 > **读写同键是硬约束**：`SettingsStore` 的读写两侧必须用同一个 KEY 常量。键名拼错
 > **不会报错**，只会永远读回默认值——「均衡器不保存」那一类缺陷就是这么来的。
@@ -481,10 +481,10 @@ V1.0 的修法只补了一半。
 
 ## 十、测试
 
-**230 项 / 26 个测试类 / 0 失败**（V1.1.3 实测；比 V1.0.3 少 5 项，减法见下）。全部是 JVM 单元测试（`app/src/test/java/`），
+**229 项 / 26 个测试类 / 0 失败**（V1.1.4 实测；比 V1.0.3 少 5 项，减法见下）。全部是 JVM 单元测试（`app/src/test/java/`），
 **不需要设备**。
 
-> **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类；V1.1.1/1.1.2 → 235 项 / 26 类；V1.1.3 → 230 项 / 26 类（删死代码减去 5 项）**（`PlayHistoryTest` 9 项随
+> **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类；V1.1.1/1.1.2 → 235 项 / 26 类；V1.1.3 → 230 项 / 26 类；V1.1.4 → 229 项 / 26 类（删访问令牌 2 项、加自动检查 1 项）**（`PlayHistoryTest` 9 项随
 > `PlayHistory.kt` 删除，新增 `QueueMirrorTest` 17 项，四个 shuffle 测试类按抽签语义重写）。
 > V1.0 之前的基线（144/17 → 214/25）见 `git log`。
 
@@ -529,7 +529,7 @@ V1.0 的修法只补了一半。
 `_probe_stall.ps1` 是「位置冻住」的长播探针，需要模拟器在线）：
 
 ```powershell
-& python _cnt.py     # files=26 tests=230 failures=0 errors=0
+& python _cnt.py     # files=26 tests=229 failures=0 errors=0
 ```
 
 ---
@@ -559,11 +559,11 @@ V1.0 的修法只补了一半。
 ## 十二、接手检查清单
 
 - [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\android-sdk` 存在
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 230 测试 0 失败
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 229 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.3-vc8.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.4-vc9.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---

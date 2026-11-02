@@ -79,11 +79,7 @@ fun StatsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
         Column(Modifier.fillMaxSize()) {
             RangePicker(current = state.range, onPick = { viewModel.setStatsRange(it) })
 
-            SummaryCard(
-                plays = state.totalPlays,
-                tracks = state.tallies.size,
-                range = state.range,
-            )
+            SummaryCard(plays = state.totalPlays, range = state.range)
 
             Histogram(buckets = state.buckets, range = state.range)
 
@@ -176,14 +172,13 @@ private fun RangePicker(current: StatsRange, onPick: (StatsRange) -> Unit) {
 }
 
 @Composable
-private fun SummaryCard(plays: Int, tracks: Int, range: StatsRange) {
+private fun SummaryCard(plays: Int, range: StatsRange) {
     Row(
         Modifier.fillMaxWidth()
             .padding(horizontal = OledTokens.screenMargin, vertical = OledTokens.spaceMd),
         horizontalArrangement = Arrangement.spacedBy(OledTokens.spaceMd),
     ) {
         StatTile("总播放", plays.toString(), range.label, Modifier.weight(1f))
-        StatTile("不重复曲目", tracks.toString(), "首", Modifier.weight(1f))
     }
 }
 

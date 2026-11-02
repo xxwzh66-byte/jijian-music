@@ -110,17 +110,14 @@ class SettingsRoundTripTest {
     }
 
     @Test
-    fun theUpdateTokenSurvivesAWriteAndRead() {
-        // V1.0.2: 键名写错就是「填了令牌却永远匿名请求」，所以走真实写入侧。
-        val prefs = emptyPreferences().toMutablePreferences()
-        SettingsStore.writeUpdateToken(prefs, "  ghp_abc123  ")
-        assertEquals("ghp_abc123", SettingsStore.readSettings(prefs).updateToken)
-    }
+    fun autoCheckUpdatesDefaultsOnAndSurvivesAWrite() {
+        // V1.1.4: 默认开着（进 app 就查一次），关掉之后必须读回 false——
+        // 键名写错会静默退回默认 true，用户会以为开关没生效。
+        val fresh = SettingsStore.readSettings(emptyPreferences().toMutablePreferences())
+        assertTrue(fresh.autoCheckUpdates)
 
-    @Test
-    fun aBlankUpdateTokenIsTheSameAsNone() {
         val prefs = emptyPreferences().toMutablePreferences()
-        SettingsStore.writeUpdateToken(prefs, "   ")
-        assertEquals("", SettingsStore.readSettings(prefs).updateToken)
+        prefs[SettingsStore.KEY_AUTO_CHECK_UPDATES] = false
+        assertFalse(SettingsStore.readSettings(prefs).autoCheckUpdates)
     }
 }

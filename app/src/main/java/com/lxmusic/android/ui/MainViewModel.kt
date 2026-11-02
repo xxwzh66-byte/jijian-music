@@ -62,8 +62,6 @@ data class LocalUiState(
     val group: LocalGroup = LocalGroup.SONGS,
     val sort: LocalSort = LocalSort.TITLE_ASC,
     val query: String = "",
-    /** V1.1.0: 只看缺封面的歌（img 为空）。 */
-    val missingCoverOnly: Boolean = false,
     /** Current visible songs (respecting search + group). */
     val songs: List<MusicInfo> = emptyList(),
     /** Album/artist groups (empty when grouping by songs). */
@@ -163,7 +161,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * V1.0.2: 设置页「检查更新」。
      *
      * 拉 GitHub 上的 `releases/latest`，把 tag 与本机 [versionName] 比较。
-     * 仓库是私有的，匿名请求会 404 —— 所以带「访问令牌」设置项，留空就匿名试。
      * 网络在 IO 线程，结果落到 [updateCheck]，由界面弹「更新内容公告」对话框。
      */
     fun checkForUpdates() = runUpdateCheck(silent = false)
@@ -177,20 +174,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun maybeCheckForUpdatesOnStartup() {
         if (_update.value.status != UpdateStatus.IDLE) return
+        if (!settingsStore.state.value.autoCheckUpdates) return
         val now = System.currentTimeMillis()
         if (now - settingsStore.state.value.lastUpdateCheckAt < UPDATE_CHECK_INTERVAL_MS) return
         settingsStore.setLastUpdateCheckAt(now)
         runUpdateCheck(silent = true)
     }
 
+    /** V1.1.4: 进应用时是否自动检查更新（设置页开关）。 */
+    fun setAutoCheckUpdates(on: Boolean) = settingsStore.setAutoCheckUpdates(on)
+
     private fun runUpdateCheck(silent: Boolean) {
         if (_update.value.status == UpdateStatus.CHECKING) return
         val current = BuildConfig.VERSION_NAME
         _update.value = UpdateCheckState(status = UpdateStatus.CHECKING, currentVersion = current)
         viewModelScope.launch {
-            val token = settingsStore.state.value.updateToken
             val result = withContext(Dispatchers.IO) {
-                runCatching { UpdateChecker().fetchLatest(token).getOrThrow() }
+                runCatching { UpdateChecker().fetchLatest().getOrThrow() }
             }
             updateSeq += 1
             _update.value = result.fold(
@@ -216,11 +216,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 },
             )
         }
-    }
-
-    /** V1.0.2: 持久化 GitHub 访问令牌（见 SettingsStore 的读写键名说明）。 */
-    fun setUpdateToken(token: String) {
-        settingsStore.setUpdateToken(token)
     }
 
     /**
@@ -520,11 +515,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         recomputeLocal()
     }
 
-    /** V1.1.0: 只看缺封面的歌。 */
-    fun setMissingCoverOnly(on: Boolean) {
-        _local.value = _local.value.copy(missingCoverOnly = on)
-    }
-
     fun setLocalSort(sort: LocalSort) {
         _local.value = _local.value.copy(sort = sort)
         recomputeLocal()
@@ -532,7 +522,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun recomputeLocal() {
         val s = _local.value
-        val base = if (s.missingCoverOnly) s.allTracks.filter { it.img.isNullOrBlank() } else s.allTracks
+        val base = s.allTracks
         val filtered = LocalLibrary.sort(LocalLibrary.search(base, s.query), s.sort)
         when (s.group) {
             LocalGroup.SONGS ->

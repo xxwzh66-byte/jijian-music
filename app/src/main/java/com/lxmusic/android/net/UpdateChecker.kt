@@ -29,9 +29,9 @@ class UpdateUnavailableException(message: String) : Exception(message)
 /**
  * 拉 GitHub Releases 的 `releases/latest`，交给调用方与本机 `versionName` 比较。
  *
- * 仓库 [DEFAULT_REPO] 是私有的，匿名请求会拿到 404。这里不把 404 显示成
- * `Not Found`，而是翻译成一句人话，并支持可选访问令牌（`Authorization: Bearer …`），
- * 由设置页的「访问令牌」字段提供。
+ * 仓库 [DEFAULT_REPO] 是公开的，匿名请求即可。V1.0.2 .. V1.1.3 曾经支持一个
+ * 「访问令牌」设置项，因为那时仓库是私有的；转公开后它只剩负作用（忘了填就
+ * 只能看到一句让人去找 PAT 的报错），V1.1.4 删掉。
  */
 class UpdateChecker(
     private val http: HttpBridge = HttpBridge(),
@@ -44,13 +44,11 @@ class UpdateChecker(
      * 失败一律以 [Result.failure] 返回且异常是 [UpdateUnavailableException]，
      * 这样界面拿到的 `message` 就是可以直接给用户看的一句话，而不是堆栈。
      */
-    fun fetchLatest(token: String? = null): Result<UpdateInfo> = runCatching {
+    fun fetchLatest(): Result<UpdateInfo> = runCatching {
         val headers = LinkedHashMap<String, Any?>()
         headers["Accept"] = "application/vnd.github+json"
         // GitHub API 要求有 User-Agent，缺省会被拒。
         headers["User-Agent"] = "lxmusic-android"
-        val t = token?.trim().orEmpty()
-        if (t.isNotEmpty()) headers["Authorization"] = "Bearer $t"
 
         val res = http.execute(
             "https://api.github.com/repos/$repo/releases/latest",
@@ -58,8 +56,7 @@ class UpdateChecker(
         )
         when (res.statusCode) {
             200 -> parseRelease(res.bodyAsString())
-            404 -> throw UpdateUnavailableException("更新源不可达，或仓库为私有（可在「访问令牌」里填 GitHub 令牌）")
-            401 -> throw UpdateUnavailableException("访问令牌无效或已过期")
+            404 -> throw UpdateUnavailableException("找不到更新源，或最新版本还没有发布")
             403, 429 -> throw UpdateUnavailableException("GitHub 限流，请稍后再试（HTTP ${res.statusCode}）")
             else -> throw UpdateUnavailableException("更新源返回 HTTP ${res.statusCode}")
         }

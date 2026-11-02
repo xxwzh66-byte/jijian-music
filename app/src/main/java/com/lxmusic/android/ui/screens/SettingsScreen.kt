@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -33,12 +34,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import com.lxmusic.android.data.settings.ThemeMode
 import com.lxmusic.android.ui.MainViewModel
 import com.lxmusic.android.ui.UpdateCheckState
@@ -59,6 +64,18 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     // ---------------- update (V1.0.2) ----------------
     val up by viewModel.updateCheck.collectAsState()
     var showUpdateDialog by remember { mutableStateOf(false) }
+    // V1.1.4: 折叠状态。外观默认展开，其余收起。
+    // 用「以换行分隔的组名」这个字符串存，而不是 Map——rememberSaveable 的
+    // 默认 saver 只认 Bundle 能装的类型，Map 进去会直接抛异常。
+    var expandedKeys by rememberSaveable { mutableStateOf("外观") }
+    val isExpanded: (String) -> Boolean = { key ->
+        key in expandedKeys.split('\n')
+    }
+    val toggle: (String) -> Unit = { key ->
+        val keys = expandedKeys.split('\n').filter { it.isNotEmpty() }.toMutableSet()
+        if (!keys.add(key)) keys.remove(key)
+        expandedKeys = keys.joinToString("\n")
+    }
     // 每次检查完成都弹一次「更新内容公告」；用 checkSeq 而不是 status，
     // 因为连续两次都查到 AVAILABLE 也应各弹一次。
     androidx.compose.runtime.LaunchedEffect(up.checkSeq) {
@@ -74,134 +91,175 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 32.dp),
         ) {
-            // ---------------- appearance ----------------
-            item { SectionHeader("外观") }
+            // V1.1.4: 分组可折叠。外观默认展开（最常改），其余收起——
+            // 一屏能看完全部四组标题，想调什么再点开，不再靠滚动找。
+            item { SectionHeader("外观", expanded = isExpanded("外观")) { toggle("外观") } }
+            if (isExpanded("外观")) {
+                item {
+                    ChoiceRow(
+                        title = "主题模式",
+                        options = listOf(
+                            ThemeMode.SYSTEM to "跟随系统",
+                            ThemeMode.LIGHT to "亮色",
+                            ThemeMode.DARK to "暗色",
+                        ),
+                        selected = s.themeMode,
+                        onSelect = viewModel::setThemeMode,
+                    )
+                }
 
-            item {
-                ChoiceRow(
-                    title = "主题模式",
-                    options = listOf(
-                        ThemeMode.SYSTEM to "跟随系统",
-                        ThemeMode.LIGHT to "亮色",
-                        ThemeMode.DARK to "暗色",
-                    ),
-                    selected = s.themeMode,
-                    onSelect = viewModel::setThemeMode,
-                )
-            }
-
-            item {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text("主题色", style = MaterialTheme.typography.bodyLarge)
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        AppPalettes.forEach { p ->
-                            val selected = p.id == s.themeColor
-                            Box(
-                                Modifier.size(36.dp).clip(CircleShape)
-                                    .background(Brush.linearGradient(p.gradient))
-                                    .border(
-                                        width = if (selected) 3.dp else 0.dp,
-                                        color = if (selected) MaterialTheme.colorScheme.onSurface
-                                        else MaterialTheme.colorScheme.surface,
-                                        shape = CircleShape,
-                                    )
-                                    .clickable {
-                                        toast(context, "切换主题色：" + p.label)
-                                        viewModel.setThemeColor(p.id)
-                                    },
-                            )
+                item {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text("主题色", style = MaterialTheme.typography.bodyLarge)
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            AppPalettes.forEach { p ->
+                                val selected = p.id == s.themeColor
+                                Box(
+                                    Modifier.size(36.dp).clip(CircleShape)
+                                        .background(Brush.linearGradient(p.gradient))
+                                        .border(
+                                            width = if (selected) 3.dp else 0.dp,
+                                            color = if (selected) MaterialTheme.colorScheme.onSurface
+                                            else MaterialTheme.colorScheme.surface,
+                                            shape = CircleShape,
+                                        )
+                                        .clickable {
+                                            toast(context, "切换主题色：" + p.label)
+                                            viewModel.setThemeColor(p.id)
+                                        },
+                                )
+                            }
                         }
                     }
                 }
+
+                item {
+                    SwitchRow(
+                        title = "播放页显示歌名信息",
+                        subtitle = "关闭后唱片样式不再显示歌名与歌手",
+                        checked = s.showPlayerMeta,
+                        onCheckedChange = viewModel::setShowPlayerMeta,
+                    )
+                }
             }
 
-            item {
-                SwitchRow(
-                    title = "播放页显示歌名信息",
-                    subtitle = "关闭后唱片样式不再显示歌名与歌手",
-                    checked = s.showPlayerMeta,
-                    onCheckedChange = viewModel::setShowPlayerMeta,
-                )
+            // ---------------- playback (lyrics folded in) ----------------
+            item { SectionHeader("播放与歌词", expanded = isExpanded("播放与歌词")) { toggle("播放与歌词") } }
+            if (isExpanded("播放与歌词")) {
+                item {
+                    SwitchRow(
+                        title = "播放时记录历史",
+                        subtitle = "同时决定首页「接着听」有没有内容",
+                        checked = s.recordHistory,
+                        onCheckedChange = viewModel::setRecordHistory,
+                    )
+                }
+                item {
+                    SwitchRow(
+                        title = "记录播放统计",
+                        subtitle = "只影响「播放统计」页，与「最近播放」无关",
+                        checked = s.recordStats,
+                        onCheckedChange = viewModel::setRecordStats,
+                    )
+                }
+                item {
+                    SwitchRow(
+                        title = "耳机拔出时暂停",
+                        subtitle = null,
+                        checked = s.pauseOnHeadsetUnplug,
+                        onCheckedChange = viewModel::setPauseOnHeadsetUnplug,
+                    )
+                }
+                item {
+                    SliderRow(
+                        title = "歌词字体大小",
+                        value = s.lyricFontScale,
+                        valueRange = 0.7f..1.6f,
+                        valueText = "%.2f×".format(s.lyricFontScale),
+                        onValueChange = viewModel::setLyricFontScale,
+                    )
+                }
+                item {
+                    SliderRow(
+                        title = "歌词偏移校准",
+                        value = s.lyricOffsetMs.toFloat(),
+                        valueRange = -500f..500f,
+                        valueText = "${s.lyricOffsetMs} ms",
+                        onValueChange = { viewModel.setLyricOffset(it.toInt()) },
+                    )
+                }
+                item {
+                    SwitchRow(
+                        title = "优先读取同目录 .lrc",
+                        subtitle = null,
+                        checked = s.preferLrcFile,
+                        onCheckedChange = viewModel::setPreferLrcFile,
+                    )
+                }
             }
-
-            // V6-5: launcher icon switcher (activity-alias based).
-            // V5-2: 列表样式 / 播放页样式入口已删除，数据层保留（存量密度继续生效，换肤入口在播放页右上角）
 
             // ---------------- music library ----------------
-            item { SectionHeader("音乐库") }
-
-            item {
-                InfoRow(
-                    title = "管理扫描文件夹",
-                    subtitle = "已授权 ${s.scanFolders.size} 个文件夹 · 已手动添加 ${s.manualUris.size} 首",
-                    onClick = viewModel::openFolderManager,
-                )
+            item { SectionHeader("音乐库", expanded = isExpanded("音乐库")) { toggle("音乐库") } }
+            if (isExpanded("音乐库")) {
+                item {
+                    InfoRow(
+                        title = "管理扫描文件夹",
+                        subtitle = "已授权 ${s.scanFolders.size} 个文件夹 · 已手动添加 ${s.manualUris.size} 首",
+                        onClick = viewModel::openFolderManager,
+                    )
+                }
+                item {
+                    SwitchRow(
+                        title = "启动时自动扫描",
+                        subtitle = null,
+                        checked = s.autoScanOnStart,
+                        onCheckedChange = viewModel::setAutoScan,
+                    )
+                }
+                item {
+                    SwitchRow(
+                        title = "扫描时读取内嵌封面",
+                        subtitle = null,
+                        checked = s.readEmbeddedCover,
+                        onCheckedChange = viewModel::setReadEmbeddedCover,
+                    )
+                }
             }
 
-            item { SwitchRow("启动时自动扫描", null, s.autoScanOnStart, viewModel::setAutoScan) }
-            item { SwitchRow("扫描时读取内嵌封面", null, s.readEmbeddedCover, viewModel::setReadEmbeddedCover) }
-
-            // ---------------- playback ----------------
-            item { SectionHeader("播放") }
-
-            item { SwitchRow("播放时记录历史", null, s.recordHistory, viewModel::setRecordHistory) }
-            item { SwitchRow("记录播放统计", "只影响「播放统计」页，与「最近播放」列表无关", s.recordStats, viewModel::setRecordStats) }
-            item { SwitchRow("耳机拔出时暂停", null, s.pauseOnHeadsetUnplug, viewModel::setPauseOnHeadsetUnplug) }
-
-            // ---------------- lyrics ----------------
-            item { SectionHeader("歌词") }
-
-            item {
-                SliderRow(
-                    title = "歌词字体大小",
-                    value = s.lyricFontScale,
-                    valueRange = 0.7f..1.6f,
-                    valueText = "%.2f×".format(s.lyricFontScale),
-                    onValueChange = viewModel::setLyricFontScale,
-                )
-            }
-
-            item {
-                SliderRow(
-                    title = "歌词偏移校准",
-                    value = s.lyricOffsetMs.toFloat(),
-                    valueRange = -500f..500f,
-                    valueText = "${s.lyricOffsetMs} ms",
-                    onValueChange = { viewModel.setLyricOffset(it.toInt()) },
-                )
-            }
-
-            item { SwitchRow("优先读取同目录 .lrc", null, s.preferLrcFile, viewModel::setPreferLrcFile) }
-
-            // ---------------- update (V1.0.2) ----------------
-
-            item {
-                InfoRow(
-                    title = "检查更新",
-                    subtitle = updateSubtitle(up, viewModel.versionName),
-                    onClick = viewModel::checkForUpdates,
-                )
-            }
-
-            item {
-                TokenRow(token = s.updateToken, onTokenChange = viewModel::setUpdateToken)
-            }
-
-            item {
-                InfoRow(
-                    title = "版本",
-                    subtitle = viewModel.versionName,
-                    onClick = {
-                        val cm = context.getSystemService(
-                            android.content.Context.CLIPBOARD_SERVICE,
-                        ) as android.content.ClipboardManager
-                        cm.setPrimaryClip(
-                            android.content.ClipData.newPlainText("version", viewModel.versionName),
-                        )
-                        toast(context, "已复制版本号：" + viewModel.versionName)
-                    },
-                )
+            // ---------------- update ----------------
+            item { SectionHeader("更新", expanded = isExpanded("更新")) { toggle("更新") } }
+            if (isExpanded("更新")) {
+                item {
+                    SwitchRow(
+                        title = "启动时自动检查更新",
+                        subtitle = "进入应用后拉取一次 GitHub 上的最新版本，每天最多一次",
+                        checked = s.autoCheckUpdates,
+                        onCheckedChange = viewModel::setAutoCheckUpdates,
+                    )
+                }
+                item {
+                    InfoRow(
+                        title = "立即检查",
+                        subtitle = updateSubtitle(up, viewModel.versionName),
+                        onClick = viewModel::checkForUpdates,
+                    )
+                }
+                item {
+                    InfoRow(
+                        title = "版本",
+                        subtitle = viewModel.versionName,
+                        onClick = {
+                            val cm = context.getSystemService(
+                                android.content.Context.CLIPBOARD_SERVICE,
+                            ) as android.content.ClipboardManager
+                            cm.setPrimaryClip(
+                                android.content.ClipData.newPlainText("version", viewModel.versionName),
+                            )
+                            toast(context, "已复制版本号：" + viewModel.versionName)
+                        },
+                    )
+                }
             }
 
             item {
@@ -239,28 +297,6 @@ private fun updateSubtitle(state: UpdateCheckState, current: String): String = w
     UpdateStatus.UP_TO_DATE -> "已是最新版本（$current）"
     UpdateStatus.AVAILABLE -> "有新版本：${state.latest?.tagName ?: "?"}，点按看更新内容"
     UpdateStatus.FAILED -> state.message ?: "检查失败，点按重试"
-}
-
-/** V1.0.2: GitHub 访问令牌。仓库为私有，匿名请求拿不到 releases。 */
-@Composable
-private fun TokenRow(token: String, onTokenChange: (String) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
-        Text("访问令牌", style = MaterialTheme.typography.bodyLarge)
-        Text(
-            "仓库为私有时才需要；留空则匿名请求",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
-        androidx.compose.material3.OutlinedTextField(
-            value = token,
-            onValueChange = onTokenChange,
-            singleLine = true,
-            placeholder = { Text("ghp_…（可选）") },
-            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
 }
 
 /**
@@ -332,13 +368,16 @@ internal fun UpdateDialog(state: UpdateCheckState, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun SectionHeader(title: String) {
+private fun SectionHeader(title: String, expanded: Boolean, onToggle: () -> Unit) {
     Column {
         Spacer(Modifier.height(8.dp))
         // V6.0：分组标题从"换色小字"升级为"品牌竖条 + 标题"，
         // 与主页 NeonSectionHeader、二级页顶栏共用同一个章节锚点。
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -354,6 +393,13 @@ private fun SectionHeader(title: String) {
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) "收起$title" else "展开$title",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
         }
         NeonHairline()

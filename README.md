@@ -1,6 +1,6 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.1.3** (`versionCode = 8`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.1.4** (`versionCode = 9`)
 
 一个从 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的
 音源架构出发、已经转型为**纯本地极简音乐播放器**的 Android 应用。
@@ -277,6 +277,30 @@ explains the root causes behind them.
 `NeonTokensTest` is the same idea for the visual layer: it recomputes WCAG
 contrast over the *brightest possible* aurora composite on every palette, so a
 future "make it pop more" tweak cannot silently drop body text below AA.
+
+---
+
+## V1.1.4 — Fewer settings, one new switch (`versionCode = 9`)
+
+Four groups in settings now fold: tap a header to collapse it, the chevron shows
+which way. Only 外观 starts open, so the whole page fits on one screen and you
+scroll to a group instead of hunting for it. 播放 and 歌词 merged into
+播放与歌词 — they were two halves of the same topic, and splitting them cost a
+scroll for nothing.
+
+New: **启动时自动检查更新**. The daily silent check existed since V1.0.3 with no
+way to turn it off; now there is a switch, on by default, and turning it off
+leaves only the manual 「立即检查」 button.
+
+Removed:
+
+| Removed | Why |
+|---|---|
+| 访问令牌 (settings row + `UpdateChecker.fetchLatest(token)`) | the repo is public now, so the token bought nothing — forgetting to fill it only produced a 404 telling you to go find a PAT |
+| 缺封面 filter + row badge | embedded cover reading covers nearly every local track; the filter sat empty |
+| 不重复曲目 tile in 播放统计 | the ranking list below already tells you how many tracks there are |
+
+Key count is unchanged at 29: `update_token` goes, `auto_check_updates` arrives.
 
 ---
 
