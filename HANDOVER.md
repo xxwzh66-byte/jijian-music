@@ -1,17 +1,18 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 7 / versionName "1.1.2"**
-> 报告版本：**V1.1.2**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 73 个 .kt / 13407 行；`app/src/test/java` 26 个 .kt / 3223 行 / **235 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.1.2-vc7.apk`（release 签名，字节数以 build/apk 实测为准）
+> 交接版本：**versionCode 8 / versionName "1.1.3"**
+> 报告版本：**V1.1.3**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 66 个 .kt；`app/src/test/java` 26 个 .kt / **230 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.1.3-vc8.apk`（release 签名，字节数以 build/apk 实测为准）
 
 ---
 
 ## 一、三十秒概览
 
-这是一个 Android 本地音乐播放器，从 [lx-music-desktop](https://github.com/lyswhut/lx-music-desktop)
-的技术栈里继承了「在线音源」的能力，但**当前发布形态是纯本地播放器**
-（`FeatureFlags.ONLINE_ENABLED = false`，在线栈完整保留但休眠）。
+这是一个 Android 本地音乐播放器。起手参考了
+[lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的音源架构，
+但**在线搜索与自定义音源在 V1.1.0 已整个删除**（V1.1.3 清掉最后一批残留：
+`user_api` 表、`examples/example-source.js`、音质设置），现在没有任何网络播放路径。
 
 - **语言/UI**：Kotlin + Jetpack Compose（Material 3）
 - **视觉系统**：**"Neon Vinyl"**——Aurora UI 极光背景 + 深色 OLED + Glassmorphism 玻璃，
@@ -59,7 +60,7 @@ $env:ANDROID_SDK_ROOT="D:\demo\android-sdk"
 
 - `:app:assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`
 - `:app:versionedApk` → `build/apk/jijian-music-<版本>-vc<号>-debug.apk`（**给用户的就是这个**，见第六节）
-- `:app:testDebugUnitTest` → 235 项单元测试
+- `:app:testDebugUnitTest` → 230 项单元测试
 
 ### 这台机器上没有的东西（重要）
 
@@ -84,36 +85,29 @@ $env:ANDROID_SDK_ROOT="D:\demo\android-sdk"
 
 ---
 
-## 三、架构：为什么是「双 WebView」
+## 三、架构：三层，与它为什么被砍到三层
 
-这是本项目最需要先理解的一件事。
+`lx-music-desktop` 是 Electron + Vue3，能力分两块：内置搜索模块（酷我/酷狗/QQ/网易/
+咪咕）住在 `src/renderer/utils/musicSdk/*`，自定义源协议由
+`src/main/modules/userApi/renderer/preload.js` 注入 `window.lx`。
 
-`lx-music-desktop` 是 Electron + Vue3。它的能力分两块：
+Android 端曾经把这两块都用 headless WebView 复刻出来（两个 WebView + 一个
+`SharedNativeBridge` 原生桥 + `SourceManager` 门面），那是 `jsengine/` 与 `source/`
+两个包的全部内容。**V1.1.0 把它们连同 `assets/jsengine/`、`OnlineScreen`、
+`FeatureFlags`、`user_api` 表一起删了**，理由很直接：播放器的主线是「打开就听自己的歌」，
+而这条支线要养两个 WebView 进程（30–80 MB RAM）、一套 esbuild 打包链、一个只在
+桌面端成立的脚本协议。
 
-1. **内置搜索模块**（酷我/酷狗/QQ/网易/咪咕）住在 `src/renderer/utils/musicSdk/*`
-2. **自定义源协议**（用户导入的 .js 音源）由 `src/main/modules/userApi/renderer/preload.js` 注入 `window.lx`
+现在的三层：
 
-关键发现：**自定义源协议只提供 `musicUrl` / `lyric` / `pic`，不提供搜索**。
-所以 Android 端要拿到完整能力，需要**两个独立的 JS 运行时**：
-
-| | WebView #1 | WebView #2 |
+| 层 | 文件 | 职责 |
 |---|---|---|
-| 类 | `jsengine/LxSearchRuntime.kt` | `jsengine/LxScriptRuntime.kt` |
-| 加载 | `search_host.js`（Node shim）+ `lx-search-bundle.js`（esbuild 打包的**原始 LX 搜索模块**） | 注入与桌面版一致的 `window.lx` shim |
-| 用途 | 内置源搜索 | 运行用户导入的 LX 自定义源脚本 |
-| 资源 | `app/src/main/assets/jsengine/` | 同左 |
+| 壳 | `ui/LxApp.kt`、`ui/shell/LxShell.kt`、`ui/HomeChrome.kt` | 舞台四槽位 + 幕布；不碰业务状态 |
+| 状态 | `ui/MainViewModel.kt` | 唯一状态持有者，把 Settings/DB/播放器缝在一起 |
+| 播放 | `player/PlayerController.kt` + `player/QueueMirror.kt` | 队列、抽签、镜像到 ExoPlayer |
 
-两者共用 `jsengine/SharedNativeBridge.kt` 作为原生桥（OkHttp request、md5、
-aesEncrypt/aesDecrypt、randomBytes、inflate、deflate），门面是 `source/SourceManager.kt`。
-
-**搜索 bundle 的再生成**：源码在 `D:\demo\lx-builder\`（esbuild 0.21.5，
-`lx/` 是 vendored 的 lx-music-desktop `musicSdk` 源码，`shim/` 是 alias 垫片）。
-改完跑 `cd D:\demo\lx-builder; node build.mjs`，产物需手工同步到
-`app/src/main/assets/jsengine/lx-search-bundle.js`。
-
-**当前状态**：`FeatureFlags.ONLINE_ENABLED = false` 时 `SourceManager` 在启动任何
-WebView 之前就拒绝在线调用，**一个 WebView 进程都不会创建**（省 30–80 MB RAM）。
-想重新打开在线功能，把这一个常量改成 `true` 即可，无需恢复任何代码。
+`PlayerController` 不接收任何解析器：每首曲子都是本地文件，`playIndex` 只会产出
+`file://` 或 `content://` URI。
 
 ---
 
@@ -125,9 +119,8 @@ WebView 之前就拒绝在线调用，**一个 WebView 进程都不会创建**�
 
 | 文件 | 职责 |
 |---|---|
-| `LxApp.kt` | `Application`；持有 `db` / `sourceManager` / `settingsStore` 三个单例；**最先安装 `CrashLogger`** |
+| `LxApp.kt` | `Application`；持有 `db` / `settingsStore` 两个单例；**最先安装 `CrashLogger`** |
 | `MainActivity.kt` | 唯一的 Activity；Compose 入口；权限请求、耳机拔出广播、MediaStore 删除的 IntentSender 流程 |
-| `FeatureFlags.kt` | 在线功能总开关 |
 | `CrashLogger.kt` | 未捕获异常落盘到 `filesDir/last_crash.txt`（**排障第一入口**） |
 | `ui/CrashReportDialog.kt` | 把上面的日志展示出来供用户复制 |
 
@@ -141,7 +134,7 @@ WebView 之前就拒绝在线调用，**一个 WebView 进程都不会创建**�
 | `player/RandomShuffle.kt` | 纯逻辑：真随机抽样策略 + 带 memo 的状态 |
 | `player/RandomShuffleOrder.kt` | 把上面的策略适配成 ExoPlayer 的 `ShuffleOrder` 接口 |
 | `player/EqualizerController.kt` | 均衡器（5 段 + BassBoost + Virtualizer + LoudnessEnhancer） |
-| `player/QueueLogic.kt` | 队列增删移的纯函数 |
+| `player/QueueLogic.kt` | 队列 `move` / `remove` 纯函数（`nextIndex`/`prevIndex` V1.1.3 已删，生产从未调用） |
 | `player/ShuffleSink.kt`（V1.0.1） | 装/卸 shuffle order 的 seam：`install(): Boolean` / `dropInstalled()`。生产实现桥到 `PlayerHolder` 的 ExoPlayer，测试实现是内存 sink |
 | `player/QueueMirror.kt`（V1.0.1） | 镜像 playlist 的唯一起点：`replace` / `ensure` / `insert` / `move` / `remove` / `clear` / `dropToSingleItem`，五步顺序固定（drop → flag → select → setMediaItems → resync）。取代 `playlistMode` 字段与八处复制粘贴 |
 | `player/QueueIndex.kt` | `queueIndexOf(mediaId, queue, playerIndex)`：先按 **mediaId** 查队列槽位，查不到回退播放器报的 index，再不行返 -1 让调用方忽略回调。修 `playIndex(3)` 在单曲模式被报成 0 |
@@ -151,7 +144,7 @@ WebView 之前就拒绝在线调用，**一个 WebView 进程都不会创建**�
 
 | 文件 | 职责 |
 |---|---|
-| `data/db/AppDatabase.kt` | Room **v4**。表：`song_list` / `playlist` / `favorite` / `play_history` / `play_event` / `user_api` / `local_track` |
+| `data/db/AppDatabase.kt` | Room **v5**。表：`song_list` / `playlist` / `favorite` / `play_history` / `play_event` / `local_track`（`user_api` v4→v5 迁移里 drop） |
 | `data/model/MusicInfo.kt` | 核心模型 `MusicInfo` / `QualityInfo` / `SongList` / `ListItem` |
 | `data/repo/MusicRepository.kt` | 所有 DAO 的门面；`logPlay` / `playRecords` 是统计功能的数据源 |
 | `data/settings/SettingsStore.kt` | DataStore；`AppSettings` 是**唯一设置真相**，28 个 KEY 常量（含 `record_stats`、6 个 `eq_*`、V1.0.2 的 `update_token` 与 V1.0.3 的 `last_update_check_at`） |
@@ -181,7 +174,9 @@ WebView 之前就拒绝在线调用，**一个 WebView 进程都不会创建**�
 
 | 文件 | 职责 |
 |---|---|
-| `ui/LxApp.kt` | 主脚手架；**注意：类名与 `LxApp`(Application) 重名但包不同**；每个全屏页面用 early-return 切换 |
+| `ui/LxApp.kt` | V1.1.3 起只做壳的接线（200 行）；全屏页由 `ui/shell/LxShell.kt` 的 `CurtainSpec` 接管，不再 early-return |
+| `ui/HomeChrome.kt` | V1.1.3：顶栏、更新公告条、迷你播放条、舞台正文（`StageContent`） |
+| `ui/shell/LxShell.kt` | V1.1.3：舞台四槽位 `backdrop`/`tabs`/`dock`/`spotlight` + 幕布栈 |
 | `ui/MainViewModel.kt`（30 KB） | 唯一的 ViewModel，所有 UI 状态与动作 |
 | `ui/screens/NowPlayingScreen.kt` | 播放页（霓虹舞台）；`PlayerSkin.VINYL`（唱片）/ `LYRICS`（全屏歌词）两种皮肤 |
 | `ui/screens/StatsScreen.kt` | 播放统计页（玻璃卡片 + 渐变直方图） |
@@ -203,10 +198,10 @@ WebView 之前就拒绝在线调用，**一个 WebView 进程都不会创建**�
 | `ui/neon/NeonTokens.kt` | 色板 + 动效时长。`ink/inkDeep/inkSoft/surface` 底色；`neonA/neonB/neonC/accent` 霓虹；`glass/glassStrong/glassHi/stroke/rail` 玻璃；`brandGradient(themeColor)`、`auroraFrom(primary, secondary, themeColor)`、`glow/lighten/darken` |
 | `ui/neon/NeonMotion.kt` | `rememberMotionEnabled()`（读系统"移除动画"开关）、`rememberLoopPhase(ms)`、`rememberBreath(ms)`——**都返回 `State<Float>` 而不是 `Float`**，让 Canvas 只重跑 draw 不重组 |
 | `ui/neon/AuroraBackdrop.kt` | 三团 radialGradient 极光走椭圆轨道（11s/17s/23s 互质，避免同步）；`dim` 压暗、`baseColor` 兜底、`scrims` 上下压黑 |
-| `ui/neon/GlassSurface.kt` | `Modifier.neonGlass(shape, fillTop, fillBottom, borderColor, borderWidth)`、`NeonPanel`、`Modifier.neonChip(shape, active, accent)` |
+| `ui/neon/GlassSurface.kt` | `Modifier.neonGlass(shape, fillTop, fillBottom, borderColor, borderWidth)`、`Modifier.neonChip(shape, active, accent)`（`NeonPanel` V1.1.3 已删，零调用） |
 | `ui/neon/NeonProgress.kt` | 自实现进度条（不用 Material `Slider`：48dp 触摸区会盖住下方播放键）。`awaitEachGesture` 手写按下/拖动/抬手 |
 | `ui/neon/NeonControls.kt` | `NeonPlayButton`（三层辉光渐变球）、`NeonIconButton`、`NeonStatusLabel` |
-| `ui/neon/NeonShell.kt` | `NeonTab`/`NeonTabRow`（胶囊选中，形状+颜色双重编码）、`NeonHairline`（渐隐分隔线）、`NeonDot`、`NeonSectionHeader`、`NeonHalo` |
+| `ui/neon/NeonShell.kt` | `NeonTab`/`NeonTabRow`（胶囊选中，形状+颜色双重编码）、`NeonHairline`（渐隐分隔线）、`NeonDot`、`NeonSectionHeader`、`isLightSurface`（`NeonHalo` V1.1.3 已删，零调用） |
 | `ui/neon/NeonSurface.kt` | **双主题材质规格** `NeonSurfaceSpec` + `rememberNeonSurface(dark, themeColor)`。深色=极光+亮色玻璃；浅色=极光压到 ~7%+白色磨砂玻璃 |
 | `ui/neon/NeonScaffold.kt` | **二级页面骨架** `NeonScreen(title, onBack, actions) { }`：极光背景 + 56dp 玻璃顶栏 + `navigationBarsPadding()` 内容槽；`NeonGlassAction` 38dp 玻璃圆钮。设置/均衡器/扫描文件夹/播放统计四屏共用 |
 
@@ -280,7 +275,7 @@ V1.0.1 之前踩过的坑（**结论全部已被抽签语义取代，留作教�
 
 ```groovy
 ext.appVersionCode = 3
-ext.appVersionName = "1.1.2"
+ext.appVersionName = "1.1.3"
 ```
 
 改版本只改这两行，**不要**去动 `defaultConfig`。
@@ -291,7 +286,7 @@ QQ（及多数 IM 文件传输）**按「文件名 + 大小」去重**。此前�
 `app-debug.apk`，且相邻版本字节数相同，
 所以发新包给用户，QQ 认为「这个文件我已经有了」，**不认是新安装包**。
 
-`versionedApk` 把产物复制成 `jijian-music-1.1.2-vc7.apk`——文件名唯一，问题消失。
+`versionedApk` 把产物复制成 `jijian-music-1.1.3-vc8.apk`——文件名唯一，问题消失。
 
 ### GitHub Actions（V1.0.3 起）
 
@@ -486,10 +481,10 @@ V1.0 的修法只补了一半。
 
 ## 十、测试
 
-**235 项 / 26 个测试类 / 0 失败**（V1.0.3 实测，与 V1.0.2 持平）。全部是 JVM 单元测试（`app/src/test/java/`），
+**230 项 / 26 个测试类 / 0 失败**（V1.1.3 实测；比 V1.0.3 少 5 项，减法见下）。全部是 JVM 单元测试（`app/src/test/java/`），
 **不需要设备**。
 
-> **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类（功能与清理不改测试面）**（`PlayHistoryTest` 9 项随
+> **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类；V1.1.1/1.1.2 → 235 项 / 26 类；V1.1.3 → 230 项 / 26 类（删死代码减去 5 项）**（`PlayHistoryTest` 9 项随
 > `PlayHistory.kt` 删除，新增 `QueueMirrorTest` 17 项，四个 shuffle 测试类按抽签语义重写）。
 > V1.0 之前的基线（144/17 → 214/25）见 `git log`。
 
@@ -500,7 +495,7 @@ V1.0 的修法只补了一半。
 | `RandomShuffleStateTest` | 18 | **V1.0.1 抽签契约**：next 排除当前曲、prev 同样排除且额外避开刚播完的那首、一次抽签在下一首开始前反复问答案不变、`onTrackStarted` 清空缓存、2 首队列两个方向都能换 |
 | `LocalLibraryTest` | 15 | 分组、搜索、排序 |
 | `QueueMirrorTest` | 17 | **V1.0.1**：镜像 playlist 的五步按固定顺序执行、`move`/`remove` 在播放器改动**之后**才丢弃已装 order、`replace` 拒绝无法镜像的队列 |
-| `QueueLogicTest` | 12 | 队列增删移纯逻辑 |
+| `QueueLogicTest` | 8 | 队列 `move`/`remove` 纯逻辑（`nextIndex`/`prevIndex` 与它们的 4 个用例 V1.1.3 删除） |
 | `RandomShuffleOrderTest` | 11 | **V1.0.1** `ShuffleOrder` 契约：prev 恒答一个合法且不等于当前的下标，克隆体继续从同一份 state 抽 |
 | `LrcParserTest` | 8 | LRC 时间戳解析 |
 | `ShuffleStallProbe` | 9 | **V1.0.1**：app 走 500 步 + 系统走 500 步都不卡、两条路径永远选同一首、从同一首出发的多次抽签能覆盖全部 N-1 个替代 |
@@ -534,7 +529,7 @@ V1.0 的修法只补了一半。
 `_probe_stall.ps1` 是「位置冻住」的长播探针，需要模拟器在线）：
 
 ```powershell
-& python _cnt.py     # files=26 tests=235 failures=0 errors=0
+& python _cnt.py     # files=26 tests=230 failures=0 errors=0
 ```
 
 ---
@@ -564,12 +559,11 @@ V1.0 的修法只补了一半。
 ## 十二、接手检查清单
 
 - [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\android-sdk` 存在
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 235 测试 0 失败
-- [ ] 读 `FeatureFlags.kt`（理解在线/离线边界）
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 230 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.2-vc7.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.3-vc8.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---

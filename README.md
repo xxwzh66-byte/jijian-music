@@ -1,91 +1,46 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.1.2** (`versionCode = 7`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.1.3** (`versionCode = 8`)
 
 一个从 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的
-音源架构出发、逐步转型为**纯本地极简音乐播放器**的 Android 应用。
-在线搜索/自定义音源模块仍然完整保留在代码中，但默认通过
-`FeatureFlags.ONLINE_ENABLED = false` 关闭（改一个常量即可恢复）。
+音源架构出发、已经转型为**纯本地极简音乐播放器**的 Android 应用。
+在线搜索与自定义音源在 V1.1.0 整个删除（连同 `user_api` 表与 LX 脚本运行时），
+只留本地文件播放。
 
 An Android music player derived from the architecture of
 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop).
 
-The desktop app is Electron + Vue 3; this project ports its **music-source
-architecture** to native Android (Kotlin + Jetpack Compose + Media3/ExoPlayer).
-
----
-
-接手开发请先读 **[HANDOVER.md](HANDOVER.md)**——环境搭建、代码地图、发布流程、排障手册、技术债清单。
-
-> 版本历史只保留 **V1.0 起的正式发布**章节。V1.0 之前（5.3.x / 6.0–6.2，试用期编号）
-> 的章节已移除——那些版本提到的 `ShuffleBag` 洗牌袋、`PlayHistory` 历史栈、
-> `Changelog.kt` / `AnnouncementScreen` 等文件全部删除，播放语义也已被 V1.0.1 推翻，
-> 留档只会误导。当前行为以 `HANDOVER.md` 与代码为准。
-
-## Why this design
-
-lx-music-desktop separates concerns into two layers:
-
-1. **Built-in music SDK** (`src/renderer/utils/musicSdk/*`) — JS modules that
-   implement *search* for each platform (Kw/Kugou/QQ/NetEase/Migu).
-2. **Custom sources / "自定义源"** (`src/main/modules/userApi/*`) — a sandboxed
-   `window.lx` runtime in which users load JS scripts that resolve a song to a
-   **playable URL** (`musicUrl`), plus `lyric`/`pic`. The script declares its
-   capabilities via `lx.send('inited', {sources:{...}})` and answers actions
-   through `lx.on('request', handler)`.
-
-Android cannot run Electron, so this project reproduces **both layers inside a
-headless `WebView`** and bridges them to native code:
+The desktop app is Electron + Vue 3. This project borrowed its shape and then
+took the opposite direction: playback is local files only, through Media3.
 
 ```
 ┌──────────────────────────── Android app (Kotlin) ────────────────────────────┐
-│  Compose UI  ─▶  MainViewModel  ─▶  SourceManager                            │
-│                                       │            │                          │
-│                       ┌───────────────┘            └───────────────┐          │
-│                       ▼                                            ▼          │
-│          LxSearchRuntime (WebView #1)                LxScriptRuntime (WebView #2)
-│          search_host.js  +                           user's custom source     │
-│          lx-search-bundle.js                         script (window.lx shim)  │
-│                       │                                            │          │
-│                       └──────────────┬─────────────────────────────┘          │
-│                                      ▼                                        │
-│                       SharedNativeBridge  (crypto / zlib / OkHttp)            │
-│                                      │                                        │
-│                                      ▼                                        │
-│                       Media3 ExoPlayer  (PlaybackService + MediaSession)      │
+│  Compose UI  ─▶  MainViewModel  ─▶  PlayerController ─▶ Media3 ExoPlayer     │
+│                       │                    │                                  │
+│                       ▼                    ▼                                  │
+│              SettingsStore (DataStore)   QueueMirror (one playlist)          │
+│              Room DB v5                  RandomShuffleOrder (draws)          │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### WebView #1 — search engine
-`search_host.js` supplies Node-like shims (`Buffer`, `crypto`, `zlib`,
-`httpFetch`) backed by the native bridge. `lx-search-bundle.js` is produced by
-the `lx-builder` esbuild pipeline and packages the **original LX search modules**
-(slightly adapted) so search behaviour matches the desktop app.
-
-### WebView #2 — custom source (playback)
-`LxScriptRuntime` injects the exact `window.lx` shim used by the desktop app
-(`preload.js`) and evaluates the user's source script verbatim. This means
-**existing LX Music custom-source scripts run unmodified on Android**.
-
-### Native bridge
-`SharedNativeBridge` implements the primitives scripts rely on:
-`lxNative.request` (OkHttp), `md5`, `aesEncrypt/aesDecrypt`, `randomBytes`,
-`inflate`, `deflate`.
+`ui/shell/LxShell.kt` holds the stage; full-screen pages are curtains registered
+with `CurtainSpec(key, visible, onDismiss, content)`, so no page writes its own
+`BackHandler`.
 
 ---
 
 ## Supported sources
 
-| Source | Native search (WebView #1) | Playback (custom source) |
-|--------|:--------------------------:|:------------------------:|
-| 酷我 (kw)  | ✅ live-tested | via user source |
-| 酷狗 (kg)  | ✅ live-tested | via user source |
-| 咪咕 (mg)  | ✅ live-tested | via user source |
-| QQ (tx)    | needs desktop request headers | via user source |
-| 网易 (wy)  | needs desktop request headers | via user source |
+Local files, and nothing else. Two ways in:
 
-Playback of every source works through a loaded custom source (`导入音源`),
-exactly as in the desktop app.
+- **SAF folder scan** — pick any folder through the system picker; the app stores
+  the tree URI and rescans on demand. Survives reboots and survives the folder
+  being moved within the same volume.
+- **MediaStore fallback** — for anything the picker cannot reach.
+
+Recognised extensions and their MIME types live in `local/SafMusicScanner.kt`.
+Playback is ExoPlayer over `content://` and `file://` URIs; there is no network
+playback path left in the codebase.
 
 ---
 
@@ -109,27 +64,7 @@ That rename is load-bearing: QQ (and most IM file transfers) de-duplicate on
 in length, so a new package was silently matched against the one already in the
 chat. See [HANDOVER.md](HANDOVER.md) §6.
 
-### Rebuilding the search bundle
-The search providers are compiled from `lx-music-desktop` sources by
-`lx-builder/` (esbuild). To regenerate `app/src/main/assets/jsengine/lx-search-bundle.js`:
-
-```bash
-cd lx-builder
-node build.mjs
-```
-
-`lx-builder/lx/` holds the vendored `musicSdk` sources from
-`lx-music-desktop@dev`.
-
 ---
-
-## Using a custom source
-
-1. Open the app → **导入音源**.
-2. Paste an LX Music custom-source script (the same `.js` files used by the
-   desktop app / [lx-music-script](https://github.com/lyswhut/lx-music-script)).
-3. Tap **导入并加载**. The script registers its supported sources; search for a
-   song, then tap a result to play.
 
 ---
 
@@ -137,22 +72,16 @@ node build.mjs
 
 ```
 app/src/main/java/com/lxmusic/android/
-├── FeatureFlags.kt              # ONLINE_ENABLED / CUSTOM_SOURCE_ENABLED
 ├── LxApp.kt                     # Application + singletons
 ├── MainActivity.kt              # Compose entry point
 ├── CrashLogger.kt               # uncaught-exception handler -> filesDir/last_crash.txt
 ├── data/
-│   ├── db/AppDatabase.kt        # Room DB v4 (playlists, favorites, history, local_track, play_event)
+│   ├── db/AppDatabase.kt        # Room DB v5 (playlists, favorites, history, local_track, play_event)
 │   ├── model/MusicInfo.kt
 │   ├── repo/MusicRepository.kt  # single DB access point
-│   ├── settings/SettingsStore.kt# DataStore preferences (26 keys)
+│   ├── settings/SettingsStore.kt# DataStore preferences (29 keys)
 │   ├── settings/EqProfile.kt    # persistable tone curve (bands encode/decode)
 │   └── stats/PlayStats.kt       # pure play-count aggregation (day / week / all)
-├── jsengine/                    # (dormant) WebView engines
-│   ├── LxSearchRuntime.kt       # WebView #1 (search)
-│   ├── LxScriptRuntime.kt       # WebView #2 (custom source)
-│   ├── LxJsBridge.kt            # window.lx -> native (source runtime)
-│   └── SharedNativeBridge.kt    # crypto/zlib/http primitives
 ├── local/
 │   ├── LocalMusicScanner.kt     # MediaStore fallback scan
 │   ├── SafMusicScanner.kt       # SAF folder scan (T2)
@@ -169,7 +98,7 @@ app/src/main/java/com/lxmusic/android/
 │   └── UpdateChecker.kt         # V1.0.2: GitHub Releases latest -> UpdateInfo
 ├── player/
 │   ├── PlaybackService.kt       # MediaSessionService + ExoPlayer
-│   ├── PlayerController.kt      # URL resolution + playback state
+│   ├── PlayerController.kt      # playback state, queue, draw policy
 │   ├── PlayerHolder.kt          # the ExoPlayer instance (audioSessionId, ShuffleOrder)
 │   ├── RandomShuffle.kt         # V1.0.1: per-draw shuffle policy (authoritative KDoc)
 │   ├── RandomShuffleOrder.kt    # media3 ShuffleOrder adapter
@@ -177,36 +106,33 @@ app/src/main/java/com/lxmusic/android/
 │   ├── QueueMirror.kt           # V1.0.1: the one place that mirrors the Queue
 │   ├── QueueIndex.kt            # media id -> queue slot resolution
 │   ├── StallWatchdog.kt         # silent-stall detection (pure Kotlin)
-│   ├── QueueLogic.kt            # queue index bookkeeping
+│   ├── QueueLogic.kt            # queue move / remove pure functions
 │   └── EqualizerController.kt   # audiofx wrapper (+ EqProfile replay on attach)
-├── source/                      # (dormant) LX search/source facade
-│   ├── KwSearchProvider.kt      # native HTTP fallback search
-│   ├── LxModels.kt
-│   ├── SourceManager.kt
-│   └── LxUtils.kt
 ├── ui/
-│   ├── LxApp.kt                 # Compose root + navigation
+│   ├── LxApp.kt                 # V1.1.3: shell wiring only, 200 lines
+│   ├── HomeChrome.kt            # V1.1.3: top bar / banner / mini player / stage body
+│   ├── shell/LxShell.kt         # V1.1.3: stage slots + curtains
 │   ├── MainViewModel.kt         # single state holder
 │   ├── CrashReportDialog.kt     # previous-run crash trace, copy/clear
 │   ├── components/              # TrackRow, LyricView, RotatingArtwork, PlayerSkin, ArtworkColors, SearchBar, Hints
 │   ├── neon/                    # Neon Vinyl design system: tokens, aurora, glass, controls, shell, NeonScreen scaffold
-│   ├── screens/                 # Local, Library, Online, NowPlaying, Queue, Equalizer, Stats, FolderManager, Settings
+│   ├── screens/                 # Local, Library, NowPlaying, Queue, Equalizer, Stats, FolderManager, Settings
 │   └── theme/                   # OledTokens / ColorPalettes / Theme
 ```
 
 > `data/Changelog.kt`, `ui/screens/AnnouncementScreen.kt`, `player/ShuffleBag.kt`,
-> `player/BagShuffleOrder.kt` and `player/PlayHistory.kt` no longer exist —
-> `RandomShuffle.kt` is the only shuffle implementation. Any doc still referring
-> to the others is stale.
+> `player/BagShuffleOrder.kt`, `player/PlayHistory.kt`, `jsengine/`, `source/`,
+> `ui/screens/OnlineScreen.kt` and `FeatureFlags.kt` no longer exist —
+> `RandomShuffle.kt` is the only shuffle implementation, and playback is
+> local-only. Any doc still referring to the others is stale.
 
 ---
 
 ## Legal
 
-This project is a technical study of LX Music's source architecture. It ships no
-music and hosts no content. All audio URLs are resolved at runtime by
-user-provided source scripts. Respect copyright and the laws of your
-jurisdiction.
+This project ships no music and hosts no content. It plays audio files already
+on your device. Respect copyright and the laws of your jurisdiction.
+
 ---
 
 ## Features
@@ -214,6 +140,8 @@ jurisdiction.
 ### Local music player
 - Scans device audio via `MediaStore` (`LocalMusicScanner`), grouped and sorted.
 - Plays local files directly with ExoPlayer (file path **or** `content://` Uri).
+- No network playback path: `PlayerController` takes no resolver, and `playIndex`
+  only ever produces a `file://`/`content://` URI.
 - Embedded / sibling `.lrc` lyric loading (`LyricLoader`).
 
 ### Lyrics
@@ -296,9 +224,12 @@ jurisdiction.
   `getExternalFilesDir(null)/last_crash.txt`.
 - `ui/CrashReportDialog.kt` shows it on next launch with copy/clear.
 
-### Online sources (unchanged)
-- Bundled LX search providers (Kw / Kugou / Migu verified live) inside WebView #1.
-- User custom-source scripts drive playback URL resolution inside WebView #2.
+### Updating
+- Settings → 更新 → **检查更新** pulls the latest GitHub release and shows its
+  notes in a dialog; the release tag is compared numerically, so `v1.1.10` is
+  newer than `v1.1.9`.
+- A silent check runs once per 24 h on launch and surfaces a banner on the home
+  screen only when there really is something new.
 
 ---
 
@@ -308,7 +239,7 @@ jurisdiction.
 ./gradlew :app:testDebugUnitTest
 ```
 
-235 unit tests across 26 classes, all green (run `./gradlew :app:testDebugUnitTest`):
+230 unit tests across 26 classes, all green (run `./gradlew :app:testDebugUnitTest`):
 
 | Test class | Cases | Covers |
 |---|---:|---|
@@ -318,7 +249,7 @@ jurisdiction.
 | `local/LocalLibraryTest` | 15 | search, sort orders, album/artist grouping, multi-singer split |
 | `player/RandomShuffleOrderTest` | 11 | media3 `ShuffleOrder` contract under **V1.0.1** draw semantics — previous always answers a legal in-range slot different from the current one, clones keep drawing from the same state |
 | `player/QueueMirrorTest` | 17 | **V1.0.1**: the mirrored playlist's five steps run in one fixed order, `move`/`remove` drop the installed order *after* the player mutation, `replace` refuses a queue it cannot mirror |
-| `player/QueueLogicTest` | 12 | queue move/remove/next/prev bookkeeping |
+| `player/QueueLogicTest` | 8 | queue move/remove bookkeeping — `nextIndex`/`prevIndex` were deleted in V1.1.3 with their tests, because production never called them |
 | `lyric/LrcParserTest` | 8 | timestamp parsing, multi-tag lines, translation detection |
 | `player/ShuffleStallProbe` | 9 | **V1.0.1**: 500-step app walk + 500-step system walk never stall, the two paths always pick the same track, every draw from one track can reach all N-1 alternatives |
 | `player/StallWatchdogTest` | 8 | silent-stall detection — retry budget, re-buffer second stage, buffering-only stall, reset on progress (fake clock); a buffer does not spend the freeze budget |
@@ -331,7 +262,7 @@ jurisdiction.
 | `ui/theme/OledTokensTest` | 6 | OLED token contrast ratios |
 | `data/SettingsRoundTripTest` | 11 | every preference key is written and read back through the *same* key constant — the "equalizer does not survive a restart" class of bug cannot hide behind a default-only assertion; the V1.0.2 update token is checked the same way |
 | `net/UpdateCheckerTest` | 11 | **V1.0.2**: release-tag version comparison (leading `v`, numeric segments, prerelease suffix ordering) and GitHub release JSON parsing (first `.apk` asset, title fallback, graceful degradation on missing fields) — no network in unit tests |
-| `data/SettingsTest` | 5 | settings defaults (incl. flat EQ profile) / enum values |
+| `data/SettingsTest` | 4 | settings defaults (incl. flat EQ profile) / enum values |
 | `local/SafMusicScannerTest` | 5 | audio extension / mime detection |
 | `player/QueueIndexTest` | 5 | a queue slot is only real if the *id* at that slot is the track playing — the online-queue `playIndex(3)` → reported-as-0 defect |
 | `player/RandomShuffleTest` | 6 | **V1.0.1**: `pickOther` always lands in range and never returns an excluded slot; uniformity over 600 seeds |
@@ -339,7 +270,7 @@ jurisdiction.
 | `ui/components/PlayerSkinTest` | 4 | player skin parsing / fallbacks |
 | `data/stats/RecordPolicyTest` | 3 | 最近播放 and 播放统计 are independent switches |
 
-The six `RandomShuffle*` classes plus `ShuffleStallProbe` encode every shuffle bug
+The five `RandomShuffle*` classes plus `ShuffleStallProbe` encode every shuffle bug
 this project has ever hit — read them before touching that code. [HANDOVER.md](HANDOVER.md) §5
 explains the root causes behind them.
 
@@ -348,6 +279,46 @@ contrast over the *brightest possible* aurora composite on every palette, so a
 future "make it pop more" tweak cannot silently drop body text below AA.
 
 ---
+
+## V1.1.3 — Stage and curtains, plus a sweep of dead code (`versionCode = 8`)
+
+`ui/LxApp.kt` was 607 lines because five full-screen pages each wrote the same
+three lines — `BackHandler` + close + `return` — and shared one function body
+with the wide-screen two-column branch. A sixth page meant repeating it a sixth
+time, and forgetting the `BackHandler` made Back exit the app.
+
+`ui/shell/LxShell.kt` keeps the stage in four slots (`backdrop`, `tabs`, `dock`,
+`spotlight`) and takes curtains as data:
+
+```kotlin
+CurtainSpec(key = "settings", visible = settingsOpen, onDismiss = viewModel::closeSettings) {
+    SettingsScreen(viewModel = viewModel, onBack = viewModel::closeSettings)
+}
+```
+
+Earliest in the list is topmost, which reproduces the old early-return ordering,
+so "open the queue from the player" stacks exactly as before. Back closes the top
+curtain; with none up the shell does not intercept Back at all.
+
+Home chrome moved out to `ui/HomeChrome.kt` (top bar, update banner, mini player,
+stage body). `LxApp.kt` is 607 → 200 lines and now reads as state plus layout.
+`Scaffold` went with it: its only contribution was insets, and the structure is a
+`Column` where the top bar eats `statusBarPadding` and the dock eats
+`navigationBarPadding`.
+
+Dead code removed in the same pass:
+
+| Removed | Why |
+|---|---|
+| `NeonPanel`, `NeonHalo` | zero call sites; `neonGlass` / `neonChip` stay |
+| `QueueLogic.nextIndex` / `prevIndex` + 4 tests | production never called them |
+| `AudioQuality`, `quality`, `setQuality` + 3 assertions | lost its consumer when online playback went away |
+| Settings → 高级 two sliders | debug parameters; persisted values still apply |
+| `user_api` table (schema 4 → 5) | the custom-source stack is gone |
+
+A real bug fixed on the way: **耳机拔出时暂停** was a switch that did nothing.
+`MainActivity` paused unconditionally on `ACTION_AUDIO_BECOMING_NOISY` and never
+read the setting.
 
 ## V1.1.2 — New launcher icon: five pulse bars (`versionCode = 7`)
 
@@ -490,83 +461,6 @@ across 26 classes, 0 failures.
 
 ---
 
-## V1.0.3 — Silent update checks, a home-screen banner, and CI (`versionCode = 4`)
-
-### What was added
-
-- **Startup check with a 24h throttle.** `MainViewModel.maybeCheckForUpdatesOnStartup()`
-  runs the same fetch as the settings button, but only once a day
-  (`last_update_check_at` persisted in `SettingsStore`, 28th key). A silent check
-  never disturbs the UI unless it genuinely finds a newer version: "up to date"
-  and "failed" both fall back to `IDLE`, because the app may run entirely offline
-  and the settings subtitle should not show a result the user never asked for.
-- **Home-screen banner.** When the silent check does find a new version, a glass
-  banner appears above the tab row ("发现新版本 v1.0.3 …", pulsing brand dot).
-  Tapping it opens the same release-notes dialog the settings page uses
-  (`UpdateDialog` moved from `private` to `internal` for reuse).
-- **GitHub Actions CI** (`.github/workflows/ci.yml`): every push runs the unit
-  tests and prints the `_cnt.py` tally; a `v*` tag builds the versioned APK and
-  uploads it to the GitHub Release — releases and the in-app announcements now
-  come from the same place the app checks.
-
-### What was removed
-
-- `allowShowUpdateAlert` — a dead flag on `UserApiInfo`/`UserApiEntity` with zero
-  readers (a leftover from the pre-1.0 announcement screen).
-- `docs/adr/0001`, `docs/adr/0002`, `docs/v6.1-refactor-plan.md` moved to
-  `docs/archive/` — they describe the shuffle-cycle semantics that V1.0.1
-  replaced. `_cnt.py` / `_per_class.py` / `_probe_stall.ps1` lost their BOM and
-  hard-coded `D:\demo` paths.
-
-### Verification
-
-`build/apk/jijian-music-1.0.3-vc4-debug.apk`, `versionCode = 4`, `versionName =
-1.0.3`, confirmed with `aapt2 dump badging`. 235 unit tests across 26 classes,
-0 failures.
-
----
-
-## V1.0.3 — Silent update check, a home banner, and CI (`versionCode = 4`)
-
-The V1.0.2 checker only ran when you opened the settings page. Now the app
-checks for itself, and dead weight from earlier eras is gone.
-
-### What was added
-
-- **Startup check, throttled to once per 24 h** — `MainViewModel.maybeCheckForUpdatesOnStartup()`
-  runs on launch, persists its last-run timestamp in a new `last_update_check_at`
-  preference, and only reports when it genuinely finds a newer release: a failed
-  or up-to-date silent check folds back to `IDLE` so the settings page never
-  shows a result the user never asked for. The manual check in settings stays
-  unthrottled.
-- **Home banner** — when the silent check finds a new version, a glass banner
-  sits above the tab row ("发现新版本 v1.0.x"), reusing the shell's glass
-  language and the palette seed colour. Tapping it opens the same release-notes
-  dialog the settings page uses (`UpdateDialog` is now `internal` for that).
-- **GitHub Actions** (`.github/workflows/ci.yml`) — every push runs the full
-  unit suite (`_cnt.py` summary step included); a `v*` tag builds the versioned
-  APK and attaches it to a GitHub Release. Releases are now "publish a tag",
-  not a manual upload chain — which matters because the V1.0.2 checker reads
-  release notes as its announcement channel.
-- **Dead-code pass** — `allowShowUpdateAlert` (a leftover flag with zero
-  readers in `LxModels.kt` / `AppDatabase.kt`) is gone; the three pre-V1.0
-  design documents moved to `docs/archive/` (their semantics were superseded by
-  the V1.0.1 shuffle rewrite); `_cnt.py` / `_per_class.py` / `_probe_stall.ps1`
-  lost their BOM and hardcoded absolute paths; `ShuffleStallProbe` no longer
-  points at the deleted `_dex/` scratch directory.
-
-### Deliberately kept
-
-`recordHistory` looked dead but is not: `MainViewModel` reads it to gate
-`repo.markPlayed` (最近播放). It stays.
-
-### Verification
-
-`build/apk/jijian-music-1.0.3-vc4-debug.apk` (23,432,086 B), `versionCode = 4`,
-`versionName = 1.0.3`, confirmed with `aapt2 dump badging`. 235 unit tests
-across 26 classes, 0 failures.
-
----
 
 ## V1.0.2 — Check for updates from the settings page (`versionCode = 3`)
 
