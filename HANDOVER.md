@@ -1,9 +1,9 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 9 / versionName "1.1.4"**
-> 报告版本：**V1.1.4**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 66 个 .kt；`app/src/test/java` 26 个 .kt / **229 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.1.4-vc9.apk`（release 签名，字节数以 build/apk 实测为准）
+> 交接版本：**versionCode 10 / versionName "1.1.5"**
+> 报告版本：**V1.1.5**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 66 个 .kt；`app/src/test/java` 26 个 .kt / **237 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.1.5-vc10.apk`（release 签名，字节数以 build/apk 实测为准）
 
 ---
 
@@ -60,7 +60,7 @@ $env:ANDROID_SDK_ROOT="D:\demo\android-sdk"
 
 - `:app:assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`
 - `:app:versionedApk` → `build/apk/jijian-music-<版本>-vc<号>-debug.apk`（**给用户的就是这个**，见第六节）
-- `:app:testDebugUnitTest` → 229 项单元测试
+- `:app:testDebugUnitTest` → 237 项单元测试
 
 ### 这台机器上没有的东西（重要）
 
@@ -147,7 +147,7 @@ Android 端曾经把这两块都用 headless WebView 复刻出来（两个 WebVi
 | `data/db/AppDatabase.kt` | Room **v5**。表：`song_list` / `playlist` / `favorite` / `play_history` / `play_event` / `local_track`（`user_api` v4→v5 迁移里 drop） |
 | `data/model/MusicInfo.kt` | 核心模型 `MusicInfo` / `QualityInfo` / `SongList` / `ListItem` |
 | `data/repo/MusicRepository.kt` | 所有 DAO 的门面；`logPlay` / `playRecords` 是统计功能的数据源 |
-| `data/settings/SettingsStore.kt` | DataStore；`AppSettings` 是**唯一设置真相**，29 个 KEY 常量（含 `record_stats`、6 个 `eq_*`、`last_update_check_at`、V1.1.4 的 `auto_check_updates`；V1.1.4 删掉了 `update_token`） |
+| `data/settings/SettingsStore.kt` | DataStore；`AppSettings` 是**唯一设置真相**，30 个 KEY 常量（含 `record_stats`、6 个 `eq_*`、`last_update_check_at`、V1.1.4 的 `auto_check_updates`、V1.1.5 的 `pending_deletes`；V1.1.4 删掉了 `update_token`） |
 | `data/settings/EqProfile.kt` | 用户音调曲线的可持久化快照：enabled/preset/bands/bass/virtualizer/loudness；`encodeBands`/`decodeBands` 坏数据丢弃不抛 |
 | `data/stats/PlayStats.kt` | 播放统计纯逻辑：日/周/全部三档、直方图分桶、排行 |
 
@@ -275,7 +275,7 @@ V1.0.1 之前踩过的坑（**结论全部已被抽签语义取代，留作教�
 
 ```groovy
 ext.appVersionCode = 3
-ext.appVersionName = "1.1.4"
+ext.appVersionName = "1.1.5"
 ```
 
 改版本只改这两行，**不要**去动 `defaultConfig`。
@@ -286,7 +286,7 @@ QQ（及多数 IM 文件传输）**按「文件名 + 大小」去重**。此前�
 `app-debug.apk`，且相邻版本字节数相同，
 所以发新包给用户，QQ 认为「这个文件我已经有了」，**不认是新安装包**。
 
-`versionedApk` 把产物复制成 `jijian-music-1.1.4-vc9.apk`——文件名唯一，问题消失。
+`versionedApk` 把产物复制成 `jijian-music-1.1.5-vc10.apk`——文件名唯一，问题消失。
 
 ### GitHub Actions（V1.0.3 起）
 
@@ -563,7 +563,7 @@ V1.0 的修法只补了一半。
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.4-vc9.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.5-vc10.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---

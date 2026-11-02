@@ -474,6 +474,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 if (cached.isNotEmpty()) {
                     _local.value = _local.value.copy(loading = false, allTracks = cached)
                     recomputeLocal()
+                    // V1.1.5: repair deletes that died with the process (the
+                    // system confirm dialog can outlive us).
+                    reconcilePendingDeletes(cached)
                 }
                 // 2. background refresh
                 val folders = settingsStore.state.value.scanFolders.toList()
@@ -787,17 +790,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** B1/B2: a MediaStore row that needs the system confirm dialog. MainActivity collects this. */
     val deleteRequest = MutableSharedFlow<android.content.IntentSender>(extraBufferCapacity = 1)
 
-    /** Pending system-confirm deletes, persisted so a killed process can reconcile on restart. */
-    private val pendingDeletes = mutableSetOf<String>()
-
     /** Deletes the underlying file (T4). Result reported through [onResult]. */
     fun deleteLocalFile(music: MusicInfo, onResult: (String) -> Unit = {}) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { LocalFileDeleter.delete(getApplication(), music) }
             when (result) {
-                is com.lxmusic.android.local.DeleteResult.Done -> onDeleteConfirmed(music)
+                is com.lxmusic.android.local.DeleteResult.Done -> {
+                    withContext(Dispatchers.IO) {
+                        com.lxmusic.android.local.LocalFileDeleter.dropCachedCover(getApplication(), music)
+                    }
+                    onDeleteConfirmed(music)
+                }
                 is com.lxmusic.android.local.DeleteResult.NeedsConfirmation -> {
-                    pendingDeletes.add(music.id)
+                    // V1.1.5: persisted, not in-memory. The confirm dialog is a
+                    // separate activity result; the process can die while it is up,
+                    // leaving a deleted file behind a surviving DB row.
+                    settingsStore.setPendingDeletes(settingsStore.state.value.pendingDeletes + music.id)
                     deleteRequest.emit(result.sender)
                 }
                 is com.lxmusic.android.local.DeleteResult.Failed -> onResult(result.reason)
@@ -809,28 +817,50 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun onDeleteConfirmed(music: MusicInfo) {
         viewModelScope.launch {
             repo.removeLocalTrack(music.id)
-            pendingDeletes.remove(music.id)
-            _local.value = _local.value.copy(
-                allTracks = _local.value.allTracks.filterNot { it.id == music.id }
-            )
+            settingsStore.setPendingDeletes(settingsStore.state.value.pendingDeletes - music.id)
+            // V1.1.5: also drop it from the player queue. Leaving the slot in place
+            // meant "next" could land on a URI that no longer resolves.
+            playerController.forgetTrack(music.id)
+            dropFromVisibleLists(music.id)
             recomputeLocal()
         }
     }
 
     /** Called when the user cancels the system dialog. */
     fun onDeleteCancelled(music: MusicInfo) {
-        pendingDeletes.remove(music.id)
+        viewModelScope.launch {
+            settingsStore.setPendingDeletes(settingsStore.state.value.pendingDeletes - music.id)
+        }
     }
 
-    /** B4: drop cache rows whose backing file no longer exists (crashed confirm flow). */
+    /**
+     * V1.1.5: reconcile deletes interrupted by a process death.
+     *
+     * Called once on startup with the freshly loaded library. For every id that
+     * was waiting on the system dialog, keep it only if the file is still there.
+     */
     fun reconcilePendingDeletes(tracks: List<MusicInfo>) {
+        val pending = settingsStore.state.value.pendingDeletes
+        if (pending.isEmpty()) return
         viewModelScope.launch {
-            val gone = tracks.filter { it.id in pendingDeletes && !trackExists(it) }
-            repo.removeLocalTracks(gone.map { it.id })
-            _local.value = _local.value.copy(allTracks = _local.value.allTracks.filterNot { it.id in pendingDeletes && !trackExists(it) })
-            gone.forEach { pendingDeletes.remove(it.id) }
-            if (gone.isNotEmpty()) recomputeLocal()
+            val byId = tracks.associateBy { it.id }
+            val gone = pending.filter { id -> byId[id]?.let { !trackExists(it) } ?: true }
+            if (gone.isEmpty()) {
+                settingsStore.setPendingDeletes(settingsStore.state.value.pendingDeletes - pending)
+                return@launch
+            }
+            withContext(Dispatchers.IO) { repo.removeLocalTracks(gone.toList()) }
+            gone.forEach { dropFromVisibleLists(it) }
+            settingsStore.setPendingDeletes(settingsStore.state.value.pendingDeletes - gone)
+            recomputeLocal()
         }
+    }
+
+    /** Removes [id] from the cached library and from any playlist holding it. */
+    private suspend fun dropFromVisibleLists(id: String) {
+        _local.value = _local.value.copy(allTracks = _local.value.allTracks.filterNot { it.id == id })
+        recomputeLocal()
+        refreshLibrary()
     }
 
     private fun trackExists(m: MusicInfo): Boolean {

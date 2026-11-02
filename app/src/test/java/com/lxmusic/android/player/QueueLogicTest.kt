@@ -60,4 +60,67 @@ class QueueLogicTest {
         assertEquals(-1, r.index)
         assertFalse(r.shouldPlay)
     }
+
+    // ---------------- removeAll (V1.1.5: deleting a file clears its slots) ----------------
+
+    @Test fun removeAllDropsEveryMatchingSlot() {
+        val dup = listOf("A", "B", "A", "C", "A")
+        val r = QueueLogic.removeAll(dup, index = 1) { it == "A" }
+        assertEquals(listOf("B", "C"), r.list)
+        assertTrue(r.changed)
+    }
+
+    @Test fun removeAllKeepsThePlayingTrackWhenItSurvives() {
+        val r = QueueLogic.removeAll(listOf("A", "B", "C", "D"), index = 2) { it == "A" }
+        assertEquals(listOf("B", "C", "D"), r.list)
+        assertEquals("C", r.list[r.index])
+        assertFalse(r.playingRemoved)
+    }
+
+    @Test fun removeAllShiftsTheIndexForMatchesBeforeIt() {
+        val r = QueueLogic.removeAll(listOf("X", "X", "Y", "X", "Z"), index = 2) { it == "X" }
+        assertEquals(listOf("Y", "Z"), r.list)
+        assertEquals(0, r.index)
+        assertEquals("Y", r.list[r.index])
+        assertFalse(r.playingRemoved)
+    }
+
+    @Test fun removeAllReportsWhenThePlayingTrackItselfIsGone() {
+        val r = QueueLogic.removeAll(listOf("A", "B", "C"), index = 1) { it == "B" }
+        assertEquals(listOf("A", "C"), r.list)
+        assertEquals(1, r.index)
+        assertEquals("C", r.list[r.index])
+        assertTrue(r.playingRemoved)
+    }
+
+    @Test fun removeAllClampsWhenThePlayingTrackWasLast() {
+        val r = QueueLogic.removeAll(listOf("A", "B", "C"), index = 2) { it == "C" }
+        assertEquals(listOf("A", "B"), r.list)
+        assertEquals(1, r.index)
+        assertTrue(r.playingRemoved)
+    }
+
+    @Test fun removeAllClearingEverythingResetsTheIndex() {
+        val r = QueueLogic.removeAll(listOf("A", "A"), index = 0) { it == "A" }
+        assertTrue(r.list.isEmpty())
+        assertEquals(-1, r.index)
+        assertTrue(r.playingRemoved)
+        assertTrue(r.changed)
+    }
+
+    @Test fun removeAllWithNoMatchIsANoOp() {
+        val q = listOf("A", "B")
+        val r = QueueLogic.removeAll(q, index = 1) { it == "Z" }
+        assertFalse("nothing matched, so callers can skip their follow-up", r.changed)
+        assertEquals(q, r.list)
+        assertEquals(1, r.index)
+        assertFalse(r.playingRemoved)
+    }
+
+    @Test fun removeAllToleratesAnOutOfRangeIndex() {
+        val r = QueueLogic.removeAll(listOf("A", "B"), index = 7) { it == "A" }
+        assertEquals(listOf("B"), r.list)
+        assertEquals(0, r.index)
+        assertFalse(r.playingRemoved)
+    }
 }

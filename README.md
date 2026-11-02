@@ -1,6 +1,6 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.1.4** (`versionCode = 9`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.1.5** (`versionCode = 10`)
 
 一个从 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的
 音源架构出发、已经转型为**纯本地极简音乐播放器**的 Android 应用。
@@ -239,7 +239,7 @@ on your device. Respect copyright and the laws of your jurisdiction.
 ./gradlew :app:testDebugUnitTest
 ```
 
-230 unit tests across 26 classes, all green (run `./gradlew :app:testDebugUnitTest`):
+237 unit tests across 26 classes, all green (run `./gradlew :app:testDebugUnitTest`):
 
 | Test class | Cases | Covers |
 |---|---:|---|
@@ -249,7 +249,7 @@ on your device. Respect copyright and the laws of your jurisdiction.
 | `local/LocalLibraryTest` | 15 | search, sort orders, album/artist grouping, multi-singer split |
 | `player/RandomShuffleOrderTest` | 11 | media3 `ShuffleOrder` contract under **V1.0.1** draw semantics — previous always answers a legal in-range slot different from the current one, clones keep drawing from the same state |
 | `player/QueueMirrorTest` | 17 | **V1.0.1**: the mirrored playlist's five steps run in one fixed order, `move`/`remove` drop the installed order *after* the player mutation, `replace` refuses a queue it cannot mirror |
-| `player/QueueLogicTest` | 8 | queue move/remove bookkeeping — `nextIndex`/`prevIndex` were deleted in V1.1.3 with their tests, because production never called them |
+| `player/QueueLogicTest` | 16 | queue move/remove bookkeeping — `nextIndex`/`prevIndex` were deleted in V1.1.3 with their tests, because production never called them; **V1.1.5** adds `removeAll`, which is what deleting a file needs (one delete can match several slots, and the only thing that matters afterwards is whether the *playing* slot went away) |
 | `lyric/LrcParserTest` | 8 | timestamp parsing, multi-tag lines, translation detection |
 | `player/ShuffleStallProbe` | 9 | **V1.0.1**: 500-step app walk + 500-step system walk never stall, the two paths always pick the same track, every draw from one track can reach all N-1 alternatives |
 | `player/StallWatchdogTest` | 8 | silent-stall detection — retry budget, re-buffer second stage, buffering-only stall, reset on progress (fake clock); a buffer does not spend the freeze budget |
@@ -277,6 +277,43 @@ explains the root causes behind them.
 `NeonTokensTest` is the same idea for the visual layer: it recomputes WCAG
 contrast over the *brightest possible* aurora composite on every palette, so a
 future "make it pop more" tweak cannot silently drop body text below AA.
+
+---
+
+## V1.1.5 — Missing covers are visible, and deleting a file no longer leaves ghosts (`versionCode = 10`)
+
+### Finding tracks without artwork
+
+`LocalMusicScanner` used to hand every track a
+`content://media/external/audio/albumart/<albumId>` URI without checking whether
+that album had any artwork. So `img` was never null, "does this track have a
+cover" was unanswerable, and every miss paid for a Coil decode that ended in an
+empty grey box.
+
+The scanner now probes the URI first (`openFileDescriptor`) and stores `null`
+when nothing is there. `Cover()` renders a `MusicNote` placeholder on error
+instead of a blank rectangle, so a missing cover looks deliberate rather than
+broken.
+
+### Deleting a file
+
+Four defects, all in the same path:
+
+1. **The queue was not told.** The slot stayed, pointing at a URI that no longer
+   resolved, so the next "next" press landed on a ghost and reported an error.
+   `PlayerController.forgetTrack(id)` now removes every matching slot; if the
+   playing track was the one deleted, playback stops rather than silently
+   starting a neighbour.
+2. **The pending-delete set was in memory.** MediaStore deletion needs a system
+   confirmation dialog, and a process killed while that dialog is up produced
+   "file gone, database row still there". The set is now persisted
+   (`pending_deletes`).
+3. **Reconciliation was never called.** `reconcilePendingDeletes()` existed but
+   had no caller. It now runs from `scanLocal()`.
+4. **Cached covers never expired.** The SAF scanner writes
+   `cacheDir/covers/<id>.jpg` once; nothing removed it.
+   `LocalFileDeleter.dropCachedCover()` deletes it with the track, and only
+   touches files under our own cache directory.
 
 ---
 

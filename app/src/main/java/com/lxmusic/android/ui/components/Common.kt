@@ -39,7 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.lxmusic.android.data.model.MusicInfo
 import com.lxmusic.android.data.settings.ListStyle
 import com.lxmusic.android.data.settings.SettingsStore
@@ -55,9 +55,24 @@ fun Cover(url: String?, size: Dp, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         if (!url.isNullOrBlank()) {
-            AsyncImage(
-                model = url, contentDescription = null,
-                contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
+            // V1.1.5: a stored path can still fail to decode (moved file, stale
+            // cacheDir/covers entry, albumart row deleted under us). Without this
+            // the box just stayed empty; the fallback icon is the honest answer.
+            SubcomposeAsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                loading = null,
+                error = {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.MusicNote,
+                            null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
             )
         } else {
             Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)

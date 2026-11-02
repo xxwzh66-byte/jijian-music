@@ -30,6 +30,46 @@ object QueueLogic {
         return ReorderResult(mutable, newIndex)
     }
 
+    /** Result of removing several queue entries at once. */
+    data class RemoveManyResult<T>(
+        val list: List<T>,
+        val index: Int,
+        /** The playing track itself was removed. */
+        val playingRemoved: Boolean,
+        /** Nothing matched, so the caller can skip its whole follow-up. */
+        val changed: Boolean,
+    )
+
+    /**
+     * V1.1.5: removes every entry satisfying [predicate], keeping [index] on the
+     * same track when that track survives.
+     *
+     * Deleting a file has to take its queue slots with it. The single-entry
+     * [remove] cannot express this: it stops at the first match and returns
+     * `shouldPlay` for the whole call, but a deletion may match several slots
+     * and what matters afterwards is only whether the *playing* one went away.
+     */
+    fun <T> removeAll(list: List<T>, index: Int, predicate: (T) -> Boolean): RemoveManyResult<T> {
+        val playing = list.getOrNull(index)
+        val kept = list.filterNot(predicate)
+        if (kept.size == list.size) {
+            return RemoveManyResult(list, index, playingRemoved = false, changed = false)
+        }
+        if (kept.isEmpty()) {
+            return RemoveManyResult(emptyList(), -1, playingRemoved = true, changed = true)
+        }
+        val playingRemoved = playing != null && predicate(playing)
+        val newIndex = if (playingRemoved) {
+            // Land on the slot the survivor held, clamped into the new list.
+            index.coerceAtMost(kept.size - 1)
+        } else {
+            // Same track, shifted by however many earlier entries disappeared.
+            val before = list.take(index.coerceIn(0, list.size)).count(predicate)
+            (index - before).coerceIn(0, kept.size - 1)
+        }
+        return RemoveManyResult(kept, newIndex, playingRemoved, changed = true)
+    }
+
     /** Result of removing a queue entry. */
     data class RemoveResult<T>(val list: List<T>, val index: Int, val shouldPlay: Boolean)
 

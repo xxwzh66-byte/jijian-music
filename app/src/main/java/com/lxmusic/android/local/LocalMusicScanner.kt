@@ -62,9 +62,17 @@ class LocalMusicScanner(private val context: Context) {
                 val contentUri = ContentUris.withAppendedId(
                     MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id
                 )
+                // V1.1.5: only claim a cover when the provider actually has one.
+                // Handing out the albumart URI for an album without artwork made
+                // `img` unconditionally non-blank, so "this track has no cover"
+                // was unrepresentable and every such row paid a failed decode.
                 val artUri = ContentUris.withAppendedId(
                     Uri.parse("content://media/external/audio/albumart"), albumId
                 )
+                val hasArt = runCatching {
+                    context.contentResolver
+                        .openFileDescriptor(artUri, "r")?.use { true } ?: false
+                }.getOrDefault(false)
 
                 out.add(
                     MusicInfo(
@@ -77,7 +85,7 @@ class LocalMusicScanner(private val context: Context) {
                         albumId = albumId.toString(),
                         interval = formatTime(durationMs / 1000),
                         intervalSeconds = (durationMs / 1000).toInt(),
-                        img = artUri.toString(),
+                        img = if (hasArt) artUri.toString() else null,
                         localPath = data.ifBlank { contentUri.toString() },
                         localDurationMs = durationMs,
                         localAlbumId = albumId.toString(),
