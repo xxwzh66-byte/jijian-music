@@ -35,8 +35,10 @@ plugins {
 // V1.1.2: 换启动图标——从「淡紫渐变底 + 深靛蓝八分音符」换成五根声波竖条
 // （对称脉冲包络，中心 teal、两侧 cyan、最外淡紫灰，深靛蓝底），与播放页的
 // 均衡器和进度条同一套几何；monochrome 层同形状，系统主题着色不会走样。
-ext.appVersionCode = 7
-ext.appVersionName = "1.1.2"
+// V1.1.3: 主界面骨架换成「舞台 + 幕布」（ui/shell/LxShell.kt），顺带删掉一批
+// 零引用代码与三处死设置。包名与签名不变，可从 1.1.2 直接覆盖安装。
+ext.appVersionCode = 8
+ext.appVersionName = "1.1.3"
 
 android {
     namespace = "com.lxmusic.android"

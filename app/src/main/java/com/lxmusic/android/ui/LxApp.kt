@@ -1,43 +1,9 @@
 package com.lxmusic.android.ui
 
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.Equalizer
-import androidx.compose.material.icons.filled.QueueMusic
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -46,45 +12,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.lxmusic.android.data.model.MusicInfo
-import com.lxmusic.android.player.PlayerState
-import com.lxmusic.android.data.settings.AppSettings
-import com.lxmusic.android.net.UpdateInfo
-import com.lxmusic.android.ui.UpdateStatus
 import com.lxmusic.android.ui.screens.UpdateDialog
 import com.lxmusic.android.ui.components.ArtworkColors
-import com.lxmusic.android.ui.components.Cover
-import com.lxmusic.android.ui.components.HintIconButton
 import com.lxmusic.android.ui.components.TrackActionsSheet
 import com.lxmusic.android.ui.neon.AuroraBackdrop
-import com.lxmusic.android.ui.neon.NeonDot
-import com.lxmusic.android.ui.neon.NeonGlassAction
-import com.lxmusic.android.ui.neon.NeonSurfaceSpec
-import com.lxmusic.android.ui.neon.NeonTabRow
-import com.lxmusic.android.ui.neon.NeonTiming
-import com.lxmusic.android.ui.neon.NeonTokens
-import com.lxmusic.android.ui.neon.neonChip
-import com.lxmusic.android.ui.neon.neonGlass
-import com.lxmusic.android.ui.neon.rememberBreath
 import com.lxmusic.android.ui.neon.rememberMotionEnabled
 import com.lxmusic.android.ui.neon.rememberNeonSurface
 import com.lxmusic.android.ui.screens.EqualizerScreen
-import com.lxmusic.android.ui.screens.LocalScreen
-import com.lxmusic.android.ui.screens.LibraryScreen
 import com.lxmusic.android.ui.components.PlayerSkin
 import com.lxmusic.android.ui.components.toast
 import com.lxmusic.android.ui.screens.NowPlayingScreen
@@ -92,6 +31,8 @@ import com.lxmusic.android.ui.screens.QueueScreen
 import com.lxmusic.android.ui.screens.SettingsScreen
 import com.lxmusic.android.ui.screens.StatsScreen
 import com.lxmusic.android.ui.screens.FolderManagerScreen
+import com.lxmusic.android.ui.shell.CurtainSpec
+import com.lxmusic.android.ui.shell.LxShell
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,7 +43,6 @@ fun LxApp(viewModel: MainViewModel) {
     val playerState by viewModel.player.collectAsState()
     val libraryState by viewModel.library.collectAsState()
     // V6: 主题色要在主壳与播放页之间共享，所以提到最外层只收一次。
-    // 之前它只在 nowPlaying 分支里 collect，主界面的标签与迷你播放条拿不到。
     val settings by viewModel.settings.collectAsState()
     val themeColor = settings.themeColor
     val context = LocalContext.current
@@ -121,84 +61,28 @@ fun LxApp(viewModel: MainViewModel) {
     var showUpdateDialog by remember { mutableStateOf(false) }
     var actionTarget by remember { mutableStateOf<MusicInfo?>(null) }
     var actionRemoveContext by remember { mutableStateOf<Long?>(null) } // playlistId if removing
+
     val settingsOpen by viewModel.showSettings.collectAsState()
-    if (settingsOpen) {
-        // V6.1.1: every full-screen page is an early-return branch, so Compose
-        // has no back-stack of its own and the system Back button used to fall
-        // straight through to "close the Activity". One handler per branch is
-        // what makes Back mean "up", which is what every Android user expects.
-        BackHandler { viewModel.closeSettings() }
-        SettingsScreen(viewModel = viewModel, onBack = { viewModel.closeSettings() })
-        return
-    }
     val folderManagerOpen by viewModel.showFolderManager.collectAsState()
-    if (folderManagerOpen) {
-        BackHandler { viewModel.closeFolderManager() }
-        FolderManagerScreen(viewModel = viewModel, onBack = { viewModel.closeFolderManager() })
-        return
-    }
     val statsOpen by viewModel.showStats.collectAsState()
-    if (statsOpen) {
-        BackHandler { viewModel.closeStats() }
-        StatsScreen(viewModel = viewModel, onBack = { viewModel.closeStats() })
-        return
+
+    // V1.1.0: 极光跟随当前曲目封面主色。提色在 IO 线程做一次并 remember，
+    // 封面不变就不重算；提不出来回落调色板。放在这里而不是舞台里，因为
+    // 幕布拉起时极光仍要在背后继续，色不能跟着换。
+    val artworkTint by produceState<androidx.compose.ui.graphics.Color?>(
+        initialValue = null,
+        key1 = playerState.current?.id,
+    ) {
+        value = ArtworkColors.schemeFor(context, playerState.current?.img).primary
     }
-    if (showQueue) {
-        BackHandler { showQueue = false }
-        QueueScreen(viewModel = viewModel, onBack = { showQueue = false })
-        return
-    }
-    if (showEqualizer) {
-        BackHandler { showEqualizer = false }
-        EqualizerScreen(viewModel = viewModel, onBack = { showEqualizer = false })
-        return
-    }
-    if (showNowPlaying && playerState.current != null && wide) {
-        // V1.1.0: 宽屏双栏。左栏是完整主壳，右栏是同一个 NowPlayingScreen；
-        // 播放页右上角的返回钮收起右栏，回到单栏主界面。
-        BackHandler { showNowPlaying = false }
-        Row(Modifier.fillMaxSize()) {
-            Column(Modifier.weight(0.55f)) {
-                HomeShell(
-                    viewModel = viewModel,
-                    tab = tab,
-                    playerState = playerState,
-                    libraryState = libraryState,
-                    settings = settings,
-                    updateState = updateState,
-                    themeColor = themeColor,
-                    onOpenNowPlaying = {},
-                    onShowQueue = { showQueue = true },
-                    onShowEqualizer = { showEqualizer = true },
-                    onOpenUpdateDialog = { showUpdateDialog = true },
-                    onActionTarget = { music -> actionTarget = music; actionRemoveContext = null },
-                    onActionLibraryTarget = { music, playlistId -> actionTarget = music; actionRemoveContext = playlistId },
-                )
-            }
-            NowPlayingScreen(
-                state = playerState,
-                lyricFontScale = settings.lyricFontScale,
-                skin = PlayerSkin.from(settings.playerSkin),
-                onSkinSelected = { sk -> viewModel.setPlayerSkin(sk.name) },
-                showMeta = settings.showPlayerMeta,
-                themeColor = settings.themeColor,
-                isFavorite = playerState.current?.id?.let { it in libraryState.favoriteIds } ?: false,
-                onBack = { showNowPlaying = false },
-                onTogglePlay = viewModel::togglePlayPause,
-                onNext = viewModel::next,
-                onPrev = viewModel::prev,
-                onSeek = viewModel::seekTo,
-                onToggleRepeat = { viewModel.cycleRepeat() },
-                onToggleShuffle = { viewModel.toggleShuffle() },
-                onToggleFavorite = { playerState.current?.let { viewModel.toggleFavorite(it) } },
-                onOpenQueue = { showQueue = true },
-                onOpenEqualizer = { showEqualizer = true },
-            )
-        }
-        return
-    }
-    if (showNowPlaying && playerState.current != null) {
-        BackHandler { showNowPlaying = false }
+    val surface = rememberNeonSurface(
+        dark = MaterialTheme.colorScheme.surface.luminance() <= 0.5f,
+        themeColor = themeColor,
+        artworkTint = artworkTint,
+    )
+
+    // 播放页在窄屏是一块幕布、在宽屏是右栏。两处内容一致，所以只写一遍。
+    val nowPlaying: @Composable () -> Unit = {
         NowPlayingScreen(
             state = playerState,
             lyricFontScale = settings.lyricFontScale,
@@ -218,24 +102,83 @@ fun LxApp(viewModel: MainViewModel) {
             onOpenQueue = { showQueue = true },
             onOpenEqualizer = { showEqualizer = true },
         )
-        return
     }
 
-    HomeShell(
-        viewModel = viewModel,
-        tab = tab,
-        playerState = playerState,
-        libraryState = libraryState,
-        settings = settings,
-        updateState = updateState,
-        themeColor = themeColor,
-        onOpenNowPlaying = { showNowPlaying = true },
-        onShowQueue = { showQueue = true },
-        onShowEqualizer = { showEqualizer = true },
-        onOpenUpdateDialog = { showUpdateDialog = true },
-        onActionTarget = { music -> actionTarget = music; actionRemoveContext = null },
-        onActionLibraryTarget = { music, playlistId -> actionTarget = music; actionRemoveContext = playlistId },
+    val playing = playerState.current != null
+
+    // 越靠前越在上层。顺序沿用 V1.1.2 那串 early-return 的判断次序，所以层级不变。
+    val curtains = buildList {
+        add(CurtainSpec("settings", settingsOpen, { viewModel.closeSettings() }) {
+            SettingsScreen(viewModel = viewModel, onBack = { viewModel.closeSettings() })
+        })
+        add(CurtainSpec("folders", folderManagerOpen, { viewModel.closeFolderManager() }) {
+            FolderManagerScreen(viewModel = viewModel, onBack = { viewModel.closeFolderManager() })
+        })
+        add(CurtainSpec("stats", statsOpen, { viewModel.closeStats() }) {
+            StatsScreen(viewModel = viewModel, onBack = { viewModel.closeStats() })
+        })
+        add(CurtainSpec("queue", showQueue, { showQueue = false }) {
+            QueueScreen(viewModel = viewModel, onBack = { showQueue = false })
+        })
+        add(CurtainSpec("equalizer", showEqualizer, { showEqualizer = false }) {
+            EqualizerScreen(viewModel = viewModel, onBack = { showEqualizer = false })
+        })
+        // 宽屏时播放页在右栏，不再占一块幕布。
+        if (!wide) {
+            add(CurtainSpec("nowPlaying", showNowPlaying && playing, { showNowPlaying = false }) {
+                nowPlaying()
+            })
+        }
+    }
+
+    LxShell(
+        backdrop = {
+            AuroraBackdrop(
+                colors = surface.auroraColors,
+                animate = rememberMotionEnabled(),
+                dim = surface.dim,
+                baseColor = surface.baseColor,
+                scrims = false,
+            )
+        },
+        tabs = {
+            StageContent(
+                viewModel = viewModel,
+                tab = tab,
+                playerState = playerState,
+                settings = settings,
+                updateState = updateState,
+                themeColor = themeColor,
+                onOpenQueue = { showQueue = true },
+                onShowEqualizer = { showEqualizer = true },
+                onOpenUpdateDialog = { showUpdateDialog = true },
+                onActionTarget = { music -> actionTarget = music; actionRemoveContext = null },
+                onActionLibraryTarget = { music, playlistId ->
+                    actionTarget = music; actionRemoveContext = playlistId
+                },
+            )
+        },
+        dock = {
+            MiniPlayer(
+                state = playerState,
+                themeColor = themeColor,
+                surface = surface,
+                onClick = { showNowPlaying = true },
+                onToggle = viewModel::togglePlayPause,
+                onNext = viewModel::next,
+            )
+        },
+        curtains = curtains,
+        spotlight = if (wide && showNowPlaying && playing) {
+            { Box(Modifier.fillMaxSize()) { nowPlaying() } }
+        } else {
+            null
+        },
     )
+
+    if (showUpdateDialog) {
+        UpdateDialog(state = updateState, onDismiss = { showUpdateDialog = false })
+    }
 
     actionTarget?.let { music ->
         val isLocal = music.isLocal
@@ -253,355 +196,5 @@ fun LxApp(viewModel: MainViewModel) {
                 viewModel.deleteLocalFile(music) { msg -> toast(context, msg) }
             }) else null,
         )
-    }
-
-}
-
-/**
- * V1.0.3: 首页顶部的新版本公告条。
- *
- * 只在静默检查真的发现新版本时出现（UpdateStatus.AVAILABLE）；
- * 「已是最新 / 检查失败」都不打扰。样式沿用外壳玻璃语言：半透明 + 1dp 描边，
- * 左侧 3dp 品牌竖条与顶栏同源。
- */
-@Composable
-private fun UpdateBanner(
-    info: com.lxmusic.android.net.UpdateInfo,
-    current: String,
-    themeColor: String,
-    onOpen: () -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .neonGlass(shape = RoundedCornerShape(14.dp))
-            .clickable(onClick = onOpen)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .width(3.dp)
-                .height(30.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(Brush.verticalGradient(NeonTokens.brandGradient(themeColor))),
-        )
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                "发现新版本 ${info.tagName}",
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                info.title.ifBlank { "点按查看更新内容（当前 $current）" },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        NeonDot(color = NeonTokens.brandGradient(themeColor)[1], pulse = true)
-    }
-}
-
-/**
- * V1.1.0: 主壳抽成独立 composable——宽屏双栏需要在左栏里再渲染一次完整主界面，
- * 内联在 LxApp 里的巨块状态写回没法复用。所有"打开某页"都走回调。
- */
-@Composable
-private fun HomeShell(
-    viewModel: MainViewModel,
-    tab: HomeTab,
-    playerState: PlayerState,
-    libraryState: LibraryUiState,
-    settings: AppSettings,
-    updateState: UpdateCheckState,
-    themeColor: String,
-    onOpenNowPlaying: () -> Unit,
-    onShowQueue: () -> Unit,
-    onShowEqualizer: () -> Unit,
-    onOpenUpdateDialog: () -> Unit,
-    onActionTarget: (MusicInfo) -> Unit,
-    onActionLibraryTarget: (MusicInfo, Long?) -> Unit,
-) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    // V1.0.3: 公告条对话框状态跟壳走。
-    var showUpdateDialog by remember { mutableStateOf(false) }
-    if (showUpdateDialog) {
-        UpdateDialog(state = updateState, onDismiss = { showUpdateDialog = false })
-    }
-
-    // V6.0: 主界面共用播放页的极光，但压暗——列表正文必须比氛围更重要。
-    // 压的是极光峰值而不是再盖一层黑，所以色相还在，只是不再抢戏。
-    // 深浅两套材质的数值在 NeonSurface.kt 里，这里只做选择。
-    // V1.1.0: 极光跟随当前曲目封面主色——"这个播放器认得这首歌"。
-    // 提色在 IO 线程做一次并 remember，封面不变就不重算；提不出来回落调色板。
-    val artworkTint by produceState<androidx.compose.ui.graphics.Color?>(
-        initialValue = null,
-        key1 = playerState.current?.id,
-    ) {
-        value = ArtworkColors.schemeFor(context, playerState.current?.img).primary
-    }
-    val surface = rememberNeonSurface(
-        dark = MaterialTheme.colorScheme.surface.luminance() <= 0.5f,
-        themeColor = themeColor,
-        artworkTint = artworkTint,
-    )
-    Box(Modifier.fillMaxSize()) {
-        AuroraBackdrop(
-            colors = surface.auroraColors,
-            animate = rememberMotionEnabled(),
-            dim = surface.dim,
-            baseColor = surface.baseColor,
-            scrims = false,
-        )
-
-        Scaffold(
-            // 透明容器：让极光从状态栏一路透到导航栏。
-            containerColor = Color.Transparent,
-            topBar = {
-                NeonHomeTopBar(
-                    themeColor = themeColor,
-                    onOpenQueue = onShowQueue,
-                    onOpenStats = { viewModel.openStats() },
-                    onOpenEqualizer = onShowEqualizer,
-                    onOpenSettings = { viewModel.openSettings() },
-                )
-            },
-            bottomBar = {
-                MiniPlayer(
-                    state = playerState,
-                    themeColor = themeColor,
-                    surface = surface,
-                    onClick = onOpenNowPlaying,
-                    onToggle = viewModel::togglePlayPause,
-                    onNext = viewModel::next,
-                )
-            },
-        ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding)) {
-                // V1.0.3: 有新版本时在标签栏上方挂一条公告，点按弹出「更新内容」。
-                val up = updateState
-                if (up.status == UpdateStatus.AVAILABLE && up.latest != null) {
-                    UpdateBanner(
-                        info = up.latest,
-                        current = up.currentVersion,
-                        themeColor = themeColor,
-                        onOpen = onOpenUpdateDialog,
-                    )
-                }
-                val visibleTabs = remember { HomeTab.entries }
-                NeonTabRow(
-                    labels = visibleTabs.map { it.label },
-                    selectedIndex = visibleTabs.indexOf(tab).coerceAtLeast(0),
-                    onSelect = { i -> visibleTabs.getOrNull(i)?.let { viewModel.setTab(it) } },
-                    themeColor = themeColor,
-                )
-
-                when (tab) {
-                    HomeTab.LOCAL -> LocalScreen(
-                        viewModel = viewModel,
-                        onLongPress = onActionTarget,
-                    )
-                    HomeTab.LIBRARY -> LibraryScreen(
-                        viewModel = viewModel,
-                        onLongPress = onActionLibraryTarget,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NeonHomeTopBar(
-    themeColor: String,
-    onOpenQueue: () -> Unit,
-    onOpenStats: () -> Unit,
-    onOpenEqualizer: () -> Unit,
-    onOpenSettings: () -> Unit,
-) {
-    // 不用 Material TopAppBar：它会强制一个不透明的 containerColor 与固定的
-    // 64dp 高度，极光透不过去。这里自己排一行，高度与播放页顶栏对齐（56dp）。
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .height(56.dp)
-            .padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // 标题左侧一个 3dp 的品牌竖条：它是全站统一的"章节锚点"，
-        // 与 NeonSectionHeader 复用同一语言。
-        Box(
-            Modifier
-                .width(3.dp)
-                .height(18.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(Brush.verticalGradient(NeonTokens.brandGradient(themeColor)))
-        )
-        Spacer(Modifier.width(9.dp))
-        Text(
-            "极简music",
-            // 外壳文字一律读 colorScheme：设置里有 LIGHT/DARK 三档，
-            // 硬写亮色会让浅色主题下的标题消失在背景里。
-            color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 19.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.4.sp,
-        )
-        Spacer(Modifier.weight(1f))
-        NeonGlassAction(Icons.Default.QueueMusic, "播放队列", "查看并调整播放队列", onOpenQueue)
-        NeonGlassAction(Icons.Default.BarChart, "播放统计", "按日、周查看播放次数", onOpenStats)
-        NeonGlassAction(Icons.Default.Equalizer, "均衡器", "调节音效与均衡器", onOpenEqualizer)
-        NeonGlassAction(Icons.Default.Settings, "设置", "主题、扫描目录与播放选项", onOpenSettings)
-    }
-}
-
-/**
- * 主界面底部迷你播放条。
- *
- * V6.0 的三个改动，每一个都在回答"为什么之前不够酷"：
- * 1. 从纯色卡片变成玻璃条：卡片在极光背景上会切出一条硬边，玻璃条是从背景里
- *    长出来的（透明度 + 顶部 1dp 描边 + 顶部高光渐变）。
- * 2. 封面后面加一圈随歌变色的氛围光，并且**随播放呼吸**——这是主界面上唯一
- *    "活着"的元素，把"正在播放"这件事从文字变成光。
- * 3. 进度线换成品牌渐变，并在播放时叠一层呼吸光晕（只改 alpha 不改长度，
- *    否则用户会误读进度）。
- */
-@Composable
-private fun MiniPlayer(
-    state: com.lxmusic.android.player.PlayerState,
-    themeColor: String,
-    surface: com.lxmusic.android.ui.neon.NeonSurfaceSpec,
-    onClick: () -> Unit,
-    onToggle: () -> Unit,
-    onNext: () -> Unit,
-) {
-    AnimatedVisibility(
-        visible = state.current != null,
-        enter = slideInVertically { it },
-        exit = slideOutVertically { it },
-    ) {
-        val current = state.current ?: return@AnimatedVisibility
-        val progress = if (state.durationMs > 0)
-            (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
-        val breath by rememberBreath(NeonTiming.pulseMs, state.isPlaying)
-        val gradient = NeonTokens.brandGradient(themeColor)
-        // 径向渐变的 radius 是 px，不是 dp，所以要先过一遍 density。
-        val glowRadius = with(LocalDensity.current) { 56.dp.toPx() * 0.72f }
-
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .neonGlass(
-                    shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
-                    fillTop = surface.glassTop,
-                    fillBottom = surface.glassBottom,
-                    borderColor = surface.stroke,
-                )
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onClick,
-                ),
-        ) {
-            // 顶部进度线。呼吸只作用在 alpha 上（不是长度），所以不会误读进度。
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(surface.rail)
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(progress)
-                        .height(2.dp)
-                        .background(Brush.horizontalGradient(gradient))
-                )
-                if (state.isPlaying && progress > 0f) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth(progress)
-                            .height(2.dp)
-                            .background(
-                                Brush.horizontalGradient(
-                                    gradient.map { it.copy(alpha = 0.28f + 0.32f * breath) }
-                                )
-                            )
-                    )
-                }
-            }
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    // edge-to-edge 之后玻璃条一路铺到屏幕最底，但内容要抬到手势条
-                    // / 三键导航之上，否则按钮会被系统导航区盖住。
-                    .navigationBarsPadding()
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // 封面 + 氛围光。光晕半径是封面的 ~1.7 倍，画在封面下层。
-                Box(contentAlignment = Alignment.Center) {
-                    Box(
-                        Modifier
-                            .size(56.dp)
-                            .background(
-                                Brush.radialGradient(
-                                    gradient.map { it.copy(alpha = 0.24f + 0.16f * breath) },
-                                    radius = glowRadius,
-                                ),
-                                CircleShape,
-                            )
-                    )
-                    Cover(current.img, 42.dp)
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        current.name,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (state.isPlaying) {
-                            NeonDot(NeonTokens.accent, pulse = true, size = 5.dp)
-                            Spacer(Modifier.width(5.dp))
-                        }
-                        Text(
-                            current.singer,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp,
-                        )
-                    }
-                }
-                // 两个按钮保持 HintIconButton：全站"先 toast 再执行"的语义
-                // 已经存在于 30+ 处，这里破例会变成不一致。
-                HintIconButton(
-                    icon = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = "播放/暂停",
-                    hint = if (state.isPlaying) "暂停播放" else "继续播放",
-                    onClick = onToggle,
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-                HintIconButton(
-                    icon = Icons.Default.SkipNext,
-                    contentDescription = "下一首",
-                    hint = "播放下一首",
-                    onClick = onNext,
-                    tint = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
     }
 }
