@@ -80,18 +80,6 @@ data class ListItemEntity(
     val position: Int,
 )
 
-@Entity(tableName = "user_api")
-data class UserApiEntity(
-    @PrimaryKey val id: String,
-    val name: String,
-    val description: String,
-    val version: String,
-    val author: String,
-    val homepage: String,
-    val script: String,
-    val createdAt: Long,
-)
-
 /** A cached local track discovered by the SAF / manual scanners (C2). */
 @Entity(tableName = "local_track")
 data class LocalTrackEntity(
@@ -218,18 +206,6 @@ interface PlayEventDao {
 }
 
 @Dao
-interface UserApiDao {
-    @Query("SELECT * FROM user_api ORDER BY createdAt ASC")
-    suspend fun all(): List<UserApiEntity>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(api: UserApiEntity)
-
-    @Query("DELETE FROM user_api WHERE id = :id")
-    suspend fun delete(id: String)
-}
-
-@Dao
 interface LocalTrackDao {
     @Query("SELECT * FROM local_track ORDER BY title COLLATE NOCASE ASC")
     suspend fun all(): List<LocalTrackEntity>
@@ -255,18 +231,17 @@ interface LocalTrackDao {
 
 @Database(
     entities = [
-        SongListEntity::class, ListItemEntity::class, UserApiEntity::class,
+        SongListEntity::class, ListItemEntity::class,
         PlaylistEntity::class, PlaylistTrackEntity::class,
         FavoriteEntity::class, PlayHistoryEntity::class,
         LocalTrackEntity::class,
         PlayEventEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun songListDao(): SongListDao
-    abstract fun userApiDao(): UserApiDao
     abstract fun playlistDao(): PlaylistDao
     abstract fun favoriteDao(): FavoriteDao
     abstract fun historyDao(): HistoryDao
@@ -315,13 +290,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v4 -> v5: drops the user_api table - the custom-source stack is gone (V1.1.0). */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `user_api`")
+            }
+        }
+
         @Volatile private var INSTANCE: AppDatabase? = null
         fun get(context: android.content.Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: androidx.room.Room.databaseBuilder(
                     context.applicationContext, AppDatabase::class.java, "lxmusic.db"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .fallbackToDestructiveMigration()
                     .build().also { INSTANCE = it }
             }

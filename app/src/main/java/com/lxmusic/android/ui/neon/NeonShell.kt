@@ -245,17 +245,3 @@ fun NeonSectionHeader(
 @Composable
 fun isLightSurface(): Boolean = MaterialTheme.colorScheme.surface.luminance() > 0.5f
 
-/** 一个柔软的空态图标底：径向渐变的彩色雾，代替灰掉的图标。 */
-@Composable
-fun NeonHalo(color: Color, size: Dp, modifier: Modifier = Modifier) {
-    Box(
-        modifier
-            .size(size)
-            .background(
-                Brush.radialGradient(
-                    listOf(color.copy(alpha = 0.22f), color.copy(alpha = 0.04f), Color.Transparent),
-                ),
-                CircleShape,
-            )
-    )
-}

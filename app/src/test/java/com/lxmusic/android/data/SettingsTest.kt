@@ -1,7 +1,6 @@
 package com.lxmusic.android.data
 
 import com.lxmusic.android.data.settings.AppSettings
-import com.lxmusic.android.data.settings.AudioQuality
 import com.lxmusic.android.data.settings.EqProfile
 import com.lxmusic.android.data.settings.ListStyle
 import com.lxmusic.android.data.settings.ThemeMode
@@ -26,12 +25,6 @@ class SettingsTest {
     }
 
     @Test
-    fun audioQualityOptionsAndLabels() {
-        assertEquals(3, AudioQuality.entries.size)
-        assertEquals("320k", AudioQuality.Q320.label)
-    }
-
-    @Test
     fun defaultsAreSane() {
         val d = AppSettings()
         assertEquals(ThemeMode.SYSTEM, d.themeMode)
@@ -41,7 +34,6 @@ class SettingsTest {
         assertTrue(d.manualUris.isEmpty())
         assertTrue(d.autoScanOnStart)
         assertTrue(d.readEmbeddedCover)
-        assertEquals(AudioQuality.Q320, d.quality)
         assertTrue(d.recordHistory)
         // V5.3.6: independent of recordHistory, defaults on
         assertTrue(d.recordStats)

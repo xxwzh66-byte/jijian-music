@@ -2,17 +2,12 @@ package com.lxmusic.android.ui.neon
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -35,46 +30,6 @@ fun Modifier.neonGlass(
     .clip(shape)
     .background(Brush.verticalGradient(listOf(fillTop, fillBottom)))
     .border(borderWidth, borderColor, shape)
-
-/**
- * 带发光描边的玻璃面板。
- *
- * [accent] 只在需要强调时传（正在播放的卡片、被选中的统计区间）。发光靠
- * `drawBehind` 在面板外面再画两圈逐渐变淡的描边——`Modifier.shadow` 只会投影
- * 不会发光，而 RenderEffect 已被排除，这是唯一的零风险做法。
- */
-@Composable
-fun NeonPanel(
-    modifier: Modifier = Modifier,
-    accent: Color? = null,
-    shape: Shape = RoundedCornerShape(NeonTokens.radiusGlass),
-    content: @Composable BoxScope.() -> Unit,
-) {
-    val glow = if (accent != null) {
-        Modifier.drawBehind {
-            // 两圈外扩描边：近的亮、远的淡，叠出辉光。
-            val r = (this.size.minDimension / 2f)
-            drawCircle(
-                color = accent.copy(alpha = 0.16f),
-                radius = r + 6.dp.toPx(),
-                style = Stroke(width = 10.dp.toPx()),
-            )
-            drawCircle(
-                color = accent.copy(alpha = 0.08f),
-                radius = r + 12.dp.toPx(),
-                style = Stroke(width = 16.dp.toPx()),
-            )
-        }
-    } else {
-        Modifier
-    }
-    Box(
-        modifier = modifier
-            .then(glow)
-            .neonGlass(shape = shape, borderColor = accent?.copy(alpha = 0.45f) ?: NeonTokens.stroke),
-        content = content,
-    )
-}
 
 /**
  * 玻璃胶囊（圆形/胶囊按钮的底板）。

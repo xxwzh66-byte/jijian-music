@@ -145,7 +145,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             // ---------------- playback ----------------
             item { SectionHeader("播放") }
 
-            // V4-4: 默认音质入口已屏蔽，数据层保留（AudioQuality / setQuality 不动）
             item { SwitchRow("播放时记录历史", null, s.recordHistory, viewModel::setRecordHistory) }
             item { SwitchRow("记录播放统计", "只影响「播放统计」页，与「最近播放」列表无关", s.recordStats, viewModel::setRecordStats) }
             item { SwitchRow("耳机拔出时暂停", null, s.pauseOnHeadsetUnplug, viewModel::setPauseOnHeadsetUnplug) }
@@ -174,41 +173,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             }
 
             item { SwitchRow("优先读取同目录 .lrc", null, s.preferLrcFile, viewModel::setPreferLrcFile) }
-
-            // ---------------- update (V1.0.2) ----------------
-            // ---------------- advanced (V1.1.0) ----------------
-            item {
-                SectionHeader("高级")
-                // V1.1.0: 卡死看门狗阈值。默认 8s/20s 是 V6.1 按真机调的；
-                // 老设备/慢网络把滑杆拉宽，性能好的设备可以收紧到更快自救。
-                val st = s.watchdogStallMs.toFloat() / 1000f
-                val bt = s.watchdogBufferingMs.toFloat() / 1000f
-                SliderRow(
-                    title = "卡住判定阈值",
-                    value = st,
-                    valueRange = 3f..30f,
-                    valueText = "%d 秒".format(st.toInt()),
-                    onValueChange = { sec ->
-                        val stallMs = (sec * 1000).toLong()
-                        viewModel.setWatchdogThresholds(
-                            stallMs,
-                            (bt * 1000).toLong().coerceAtLeast(stallMs * 2),
-                        )
-                    },
-                )
-                SliderRow(
-                    title = "缓冲超时阈值",
-                    value = bt,
-                    valueRange = 6f..60f,
-                    valueText = "%d 秒".format(bt.toInt()),
-                    onValueChange = { b ->
-                        viewModel.setWatchdogThresholds(
-                            (st * 1000).toLong(),
-                            (b * 1000).toLong(),
-                        )
-                    },
-                )
-            }
 
             // ---------------- update (V1.0.2) ----------------
 

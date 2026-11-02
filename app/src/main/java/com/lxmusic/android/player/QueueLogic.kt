@@ -51,19 +51,4 @@ object QueueLogic {
             }
         }
     }
-
-    /** Computes the index to play next. Returns -1 when playback should stop. */
-    fun nextIndex(size: Int, index: Int, shuffle: Boolean, repeatAll: Boolean, random: () -> Int = { (0 until size).random() }): Int {
-        if (size == 0) return -1
-        if (shuffle) return random()
-        if (index + 1 < size) return index + 1
-        return if (repeatAll) 0 else -1
-    }
-
-    /** Computes the index to play for "previous". */
-    fun prevIndex(size: Int, index: Int, shuffle: Boolean, random: () -> Int = { (0 until size).random() }): Int {
-        if (size == 0) return -1
-        if (shuffle) return random()
-        return if (index - 1 >= 0) index - 1 else 0
-    }
 }

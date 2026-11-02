@@ -77,11 +77,9 @@ class SettingsRoundTripTest {
         val prefs = emptyPreferences().toMutablePreferences()
         prefs[SettingsStore.KEY_THEME_MODE] = "SEPIA"
         prefs[SettingsStore.KEY_LIST_STYLE] = "HUGE"
-        prefs[SettingsStore.KEY_QUALITY] = "lossless"
         val s = SettingsStore.readSettings(prefs)
         assertEquals(AppSettings().themeMode, s.themeMode)
         assertEquals(AppSettings().listStyle, s.listStyle)
-        assertEquals(AppSettings().quality, s.quality)
     }
 
     @Test

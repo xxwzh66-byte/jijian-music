@@ -60,22 +60,4 @@ class QueueLogicTest {
         assertEquals(-1, r.index)
         assertFalse(r.shouldPlay)
     }
-
-    @Test fun nextIndexSequential() {
-        assertEquals(2, QueueLogic.nextIndex(4, 1, shuffle = false, repeatAll = false))
-    }
-
-    @Test fun nextIndexAtEndStopsUnlessRepeatAll() {
-        assertEquals(0, QueueLogic.nextIndex(4, 3, shuffle = false, repeatAll = true))
-        assertEquals(-1, QueueLogic.nextIndex(4, 3, shuffle = false, repeatAll = false))
-    }
-
-    @Test fun nextIndexEmptyQueue() {
-        assertEquals(-1, QueueLogic.nextIndex(0, -1, shuffle = false, repeatAll = true))
-    }
-
-    @Test fun prevIndexAtStartRestarts() {
-        assertEquals(0, QueueLogic.prevIndex(4, 0, shuffle = false))
-        assertEquals(1, QueueLogic.prevIndex(4, 2, shuffle = false))
-    }
 }

@@ -37,11 +37,16 @@ class MainActivity : ComponentActivity() {
     ) { /* results ignored; UI shows empty state if denied */ }
 
     // A4: pause when headphones are unplugged (audio reroutes to the speaker).
+    //
+    // V1.1.3: this used to pause unconditionally, which made the
+    // "耳机拔出时暂停" preference a dead switch - the user could turn it off and
+    // playback still stopped. The receiver now reads the setting; the default
+    // (true) keeps the old behaviour, so nobody's habit changes silently.
     private val becomingNoisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                if (viewModel.player.value.isPlaying) viewModel.pause()
-            }
+            if (intent?.action != AudioManager.ACTION_AUDIO_BECOMING_NOISY) return
+            if (!viewModel.settings.value.pauseOnHeadsetUnplug) return
+            if (viewModel.player.value.isPlaying) viewModel.pause()
         }
     }
 

@@ -26,9 +26,6 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 /** Density of list rows. */
 enum class ListStyle(val label: String) { COMPACT("紧凑"), STANDARD("标准"), LARGE("大封面") }
 
-/** Preferred playback quality for online sources. */
-enum class AudioQuality(val label: String) { Q128("128k"), Q320("320k"), FLAC("flac") }
-
 /**
  * Which stores a track that just started should be appended to.
  *
@@ -53,7 +50,6 @@ data class AppSettings(
     val manualUris: Set<String> = emptySet(),
     val autoScanOnStart: Boolean = true,
     val readEmbeddedCover: Boolean = true,
-    val quality: AudioQuality = AudioQuality.Q320,
     /** V5.3.3: append to the 最近播放 list (`play_history` table). */
     val recordHistory: Boolean = true,
     /** V5.3.6: append a row to the play-count statistics (`play_event` table). */
@@ -148,7 +144,6 @@ class SettingsStore private constructor(context: Context) {
     fun setListStyle(style: ListStyle) = update { it.copy(listStyle = style) }
     fun setAutoScan(on: Boolean) = update { it.copy(autoScanOnStart = on) }
     fun setReadEmbeddedCover(on: Boolean) = update { it.copy(readEmbeddedCover = on) }
-    fun setQuality(q: AudioQuality) = update { it.copy(quality = q) }
     fun setRecordHistory(on: Boolean) = update { it.copy(recordHistory = on) }
     fun setRecordStats(on: Boolean) = update { it.copy(recordStats = on) }
     fun setPauseOnHeadsetUnplug(on: Boolean) = update { it.copy(pauseOnHeadsetUnplug = on) }
@@ -185,9 +180,6 @@ class SettingsStore private constructor(context: Context) {
     fun setLastUpdateCheckAt(atMs: Long) = edit { it[KEY_LAST_UPDATE_CHECK] = atMs }
 
     /** V1.1.0: 卡死看门狗阈值。 */
-    fun setWatchdogThresholds(stallMs: Long, bufferingMs: Long) = update {
-        it.copy(watchdogStallMs = stallMs, watchdogBufferingMs = bufferingMs)
-    }
 
     fun addScanFolder(uri: String) = edit { prefs ->
         prefs[KEY_SCAN_FOLDERS] = (prefs[KEY_SCAN_FOLDERS] ?: emptySet()) + uri
@@ -259,8 +251,7 @@ class SettingsStore private constructor(context: Context) {
             prefs[KEY_MANUAL_URIS] = s.manualUris
             prefs[KEY_AUTO_SCAN] = s.autoScanOnStart
             prefs[KEY_READ_COVER] = s.readEmbeddedCover
-            prefs[KEY_QUALITY] = s.quality.name
-            prefs[KEY_RECORD_HISTORY] = s.recordHistory
+                prefs[KEY_RECORD_HISTORY] = s.recordHistory
             prefs[KEY_RECORD_STATS] = s.recordStats
             prefs[KEY_PAUSE_UNPLUG] = s.pauseOnHeadsetUnplug
             prefs[KEY_LYRIC_SCALE] = s.lyricFontScale
@@ -307,8 +298,6 @@ class SettingsStore private constructor(context: Context) {
             manualUris = this[KEY_MANUAL_URIS] ?: emptySet(),
             autoScanOnStart = this[KEY_AUTO_SCAN] ?: true,
             readEmbeddedCover = this[KEY_READ_COVER] ?: true,
-            quality = runCatching { AudioQuality.valueOf(this[KEY_QUALITY] ?: AudioQuality.Q320.name) }
-                .getOrDefault(AudioQuality.Q320),
             recordHistory = this[KEY_RECORD_HISTORY] ?: true,
             recordStats = this[KEY_RECORD_STATS] ?: true,
             pauseOnHeadsetUnplug = this[KEY_PAUSE_UNPLUG] ?: true,
@@ -347,7 +336,6 @@ class SettingsStore private constructor(context: Context) {
         internal val KEY_MANUAL_URIS = stringSetPreferencesKey("manual_uris")
         internal val KEY_AUTO_SCAN = booleanPreferencesKey("auto_scan")
         internal val KEY_READ_COVER = booleanPreferencesKey("read_embedded_cover")
-        internal val KEY_QUALITY = stringPreferencesKey("quality")
         internal val KEY_RECORD_HISTORY = booleanPreferencesKey("record_history")
         internal val KEY_RECORD_STATS = booleanPreferencesKey("record_stats")
         internal val KEY_PAUSE_UNPLUG = booleanPreferencesKey("pause_on_headset_unplug")

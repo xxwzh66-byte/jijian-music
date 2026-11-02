@@ -14,7 +14,6 @@ import com.lxmusic.android.data.stats.PlayStats
 import com.lxmusic.android.data.stats.PlayTally
 import com.lxmusic.android.data.stats.StatsBucket
 import com.lxmusic.android.data.stats.StatsRange
-import com.lxmusic.android.data.settings.AudioQuality
 import com.lxmusic.android.data.settings.ListStyle
 import com.lxmusic.android.data.settings.recordPolicy
 import com.lxmusic.android.data.settings.SettingsStore
@@ -713,7 +712,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setListStyle(style: ListStyle) = settingsStore.setListStyle(style)
     fun setAutoScan(on: Boolean) = settingsStore.setAutoScan(on)
     fun setReadEmbeddedCover(on: Boolean) = settingsStore.setReadEmbeddedCover(on)
-    fun setQuality(q: AudioQuality) = settingsStore.setQuality(q)
     fun setRecordHistory(on: Boolean) = settingsStore.setRecordHistory(on)
     fun setRecordStats(on: Boolean) = settingsStore.setRecordStats(on)
     fun setPauseOnHeadsetUnplug(on: Boolean) = settingsStore.setPauseOnHeadsetUnplug(on)
@@ -721,10 +719,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setLyricOffset(ms: Int) = settingsStore.setLyricOffset(ms)
     fun setPreferLrcFile(on: Boolean) = settingsStore.setPreferLrcFile(on)
     fun setPlayerSkin(skin: String) = settingsStore.setPlayerSkin(skin)
-
-    /** V1.1.0: 卡死看门狗阈值（设置页「高级」）。 */
-    fun setWatchdogThresholds(stallMs: Long, bufferingMs: Long) =
-        settingsStore.setWatchdogThresholds(stallMs, bufferingMs)
     fun setShowPlayerMeta(on: Boolean) = settingsStore.setShowPlayerMeta(on)
 
     fun openFolderManager() { _showFolderManager.value = true }
