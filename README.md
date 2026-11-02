@@ -1,6 +1,6 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.1.1** (`versionCode = 6`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.1.2** (`versionCode = 7`)
 
 一个从 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的
 音源架构出发、逐步转型为**纯本地极简音乐播放器**的 Android 应用。
@@ -348,6 +348,23 @@ contrast over the *brightest possible* aurora composite on every palette, so a
 future "make it pop more" tweak cannot silently drop body text below AA.
 
 ---
+
+## V1.1.2 — New launcher icon: five pulse bars (`versionCode = 7`)
+
+The launcher icon no longer draws a note glyph. It is five rounded bars whose
+heights follow a symmetric pulse envelope (0.42 / 0.72 / 1.0 / 0.72 / 0.42) and
+whose colours grade outward from the centre: `#00C7BF` teal, `#8CC7BF` cyan,
+`#96A0DC` lilac. The plate reuses the player page's night gradient, `#12102E`
+to `#0D0D1E`, so the icon and the app share one ground colour.
+
+Why this shape: it reads as music without drawing an instrument or a note; five
+bars stay legible at 48 dp; and the silhouette is complete on its own, so the
+Android 13 monochrome layer carries the same form instead of falling back to the
+old glyph.
+
+Files: `res/drawable/ic_launcher_foreground.xml`,
+`ic_launcher_background.xml`, `ic_launcher_monochrome.xml`, plus the five
+`mipmap-*/ic_launcher.png` densities and their `_round` twins.
 
 ## V1.1.1 — One signing key for every build (`versionCode = 6`)
 

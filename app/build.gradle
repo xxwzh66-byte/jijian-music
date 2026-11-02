@@ -32,8 +32,11 @@ plugins {
 // secret 读同一份；本地无该文件时回落 debug 证书（仅供开发侧载）。
 //
 // 注意：升级到 1.1.1 需要先卸载旧版（证书变了，这是最后一次）。
-ext.appVersionCode = 6
-ext.appVersionName = "1.1.1"
+// V1.1.2: 换启动图标——从「淡紫渐变底 + 深靛蓝八分音符」换成五根声波竖条
+// （对称脉冲包络，中心 teal、两侧 cyan、最外淡紫灰，深靛蓝底），与播放页的
+// 均衡器和进度条同一套几何；monochrome 层同形状，系统主题着色不会走样。
+ext.appVersionCode = 7
+ext.appVersionName = "1.1.2"
 
 android {
     namespace = "com.lxmusic.android"
