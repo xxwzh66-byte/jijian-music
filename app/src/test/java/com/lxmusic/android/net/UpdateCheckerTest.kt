@@ -63,7 +63,7 @@ class UpdateCheckerTest {
           "tag_name": "v1.0.1",
           "name": "极简music 1.0.1 (vc2)",
           "body": "修复三处。\n\n- 上一首\n- 耳机\n- 顺序",
-          "html_url": "https://github.com/xxwzh66-byte/lxmusic-android/releases/tag/v1.0.1",
+          "html_url": "https://github.com/xxwzh66-byte/jijian-music/releases/tag/v1.0.1",
           "assets": [
             {"name": "source.zip", "size": 1234},
             {"name": "jijian-music-1.0.1-vc2-debug.apk", "size": 23399318}
@@ -79,7 +79,7 @@ class UpdateCheckerTest {
         assertEquals("jijian-music-1.0.1-vc2-debug.apk", info.apkName)
         assertEquals(23399318L, info.apkSize)
         assertEquals(
-            "https://github.com/xxwzh66-byte/lxmusic-android/releases/tag/v1.0.1",
+            "https://github.com/xxwzh66-byte/jijian-music/releases/tag/v1.0.1",
             info.url,
         )
         // 更新内容公告的正文就是 release body，原样交给对话框。

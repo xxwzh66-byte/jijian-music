@@ -48,7 +48,7 @@ class UpdateChecker(
         val headers = LinkedHashMap<String, Any?>()
         headers["Accept"] = "application/vnd.github+json"
         // GitHub API 要求有 User-Agent，缺省会被拒。
-        headers["User-Agent"] = "lxmusic-android"
+        headers["User-Agent"] = "jijian-music"
 
         val res = http.execute(
             "https://api.github.com/repos/$repo/releases/latest",
@@ -66,7 +66,7 @@ class UpdateChecker(
     }
 
     companion object {
-        const val DEFAULT_REPO = "xxwzh66-byte/lxmusic-android"
+        const val DEFAULT_REPO = "xxwzh66-byte/jijian-music"
 
         /**
          * 解析 `releases/latest` 的响应体。字段缺失一律降级，不抛异常：

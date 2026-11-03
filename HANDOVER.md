@@ -79,7 +79,7 @@ $env:ANDROID_SDK_ROOT="D:\demo\android-sdk"
   `Boot completed`），每次调试前先 `adb devices` 确认。**不要给模拟器 `setprop log.tag.ExoPlayerImpl`**，
   会把无头实例搞掉线。
 - 测试音乐已推到 `/sdcard/Music/NeonBloom/`（6 首 MP3，只有 `01_neon_drift.lrc`）。
-- 项目**已是 git 仓库**，远端 `https://github.com/xxwzh66-byte/lxmusic-android`（私有）。
+- 项目**已是 git 仓库**，远端 `https://github.com/xxwzh66-byte/jijian-music`（公开）。
   V1.0 起的历史可用 `git log` / `git show` 追溯；`D:\demo\backups\` 里的三个
   v5.3–v5.5 源码 zip 是 V1.0 之前唯一的留档。
 
@@ -537,7 +537,7 @@ V1.0 的修法只补了一半。
 ## 十一、历史版本与备份
 
 **V1.0 起**用 git：`git log` / `git show <ref>:<path>`，远端
-`https://github.com/xxwzh66-byte/lxmusic-android`（私有），tag `v1.0.0` 对应首发。
+`https://github.com/xxwzh66-byte/jijian-music`（公开），tag `v1.0.0` 对应首发。
 
 **V1.0 之前**只有 `D:\demo\backups\` 里三个源码 zip（v5.3.0.1 ×2、v5.5.2），
 里面是旧的 `ShuffleBag.kt` / `ShuffleBagTest.kt`，**没有 `RandomShuffle` 的历史版本**。
