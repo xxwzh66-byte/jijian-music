@@ -1,6 +1,7 @@
 package com.lxmusic.android.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lxmusic.android.BuildConfig
@@ -9,45 +10,46 @@ import com.lxmusic.android.data.model.MusicInfo
 import com.lxmusic.android.data.repo.MusicRepository
 import com.lxmusic.android.data.repo.PlaylistWithTracks
 import com.lxmusic.android.data.settings.AppSettings
-import com.lxmusic.android.data.stats.PlayRecord
-import com.lxmusic.android.data.stats.PlayStats
-import com.lxmusic.android.data.stats.PlayTally
-import com.lxmusic.android.data.stats.StatsBucket
-import com.lxmusic.android.data.stats.StatsRange
 import com.lxmusic.android.data.settings.ListStyle
-import com.lxmusic.android.data.settings.recordPolicy
 import com.lxmusic.android.data.settings.SettingsStore
 import com.lxmusic.android.data.settings.ThemeMode
-import com.lxmusic.android.local.LocalGroup
-import com.lxmusic.android.local.LocalLibrary
-import com.lxmusic.android.local.LocalSort
-import com.lxmusic.android.local.LocalMusicScanner
+import com.lxmusic.android.data.settings.recordPolicy
+import com.lxmusic.android.data.stats.AnnualReport
+import com.lxmusic.android.data.stats.PlayStats
+import com.lxmusic.android.data.stats.PlayTally
+import com.lxmusic.android.data.stats.StatsRange
 import com.lxmusic.android.local.LocalFileDeleter
-import com.lxmusic.android.local.LocalTrackMapper
-import com.lxmusic.android.local.SafMusicScanner
+import com.lxmusic.android.local.LocalGroup
+import com.lxmusic.android.local.LocalSort
 import com.lxmusic.android.local.MusicGroup
 import com.lxmusic.android.net.UpdateChecker
-import com.lxmusic.android.net.UpdateInfo
-import com.lxmusic.android.player.EqPreset
 import com.lxmusic.android.player.EqualizerState
-import com.lxmusic.android.player.PlayerController
 import com.lxmusic.android.player.PlayerState
-import com.lxmusic.android.player.RepeatMode
-import android.net.Uri
+import com.lxmusic.android.ui.state.BackupUiState
+import com.lxmusic.android.ui.state.BackupStore
+import com.lxmusic.android.ui.state.LibraryUiState
+import com.lxmusic.android.ui.state.LocalUiState
+import com.lxmusic.android.ui.state.MediaLibraryStore
+import com.lxmusic.android.ui.state.PlayerUiStore
+import com.lxmusic.android.ui.state.StatsStore
+import com.lxmusic.android.ui.state.StatsUiState
+import com.lxmusic.android.ui.state.UpdateCheckState
+import com.lxmusic.android.ui.state.UpdateStatus
+import com.lxmusic.android.ui.state.UpdateStore
+import com.lxmusic.android.ui.shell.Route
+import com.lxmusic.android.ui.shell.RouteStack
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/** Kept so existing imports in the UI layer keep resolving. */
+typealias LocalUiStateAlias = LocalUiState
 
 /** Top-level tabs. */
 enum class HomeTab(val label: String) {
@@ -56,649 +58,290 @@ enum class HomeTab(val label: String) {
     LIBRARY("音乐库"),
 }
 
-data class LocalUiState(
-    val loading: Boolean = false,
-    val allTracks: List<MusicInfo> = emptyList(),
-    val group: LocalGroup = LocalGroup.SONGS,
-    val sort: LocalSort = LocalSort.TITLE_ASC,
-    val query: String = "",
-    /** Current visible songs (respecting search + group). */
-    val songs: List<MusicInfo> = emptyList(),
-    /** Album/artist groups (empty when grouping by songs). */
-    val groups: List<MusicGroup> = emptyList(),
-    val error: String? = null,
-)
-
-data class LibraryUiState(
-    val favorites: List<MusicInfo> = emptyList(),
-    val recent: List<MusicInfo> = emptyList(),
-    val playlists: List<PlaylistWithTracks> = emptyList(),
-    val favoriteIds: Set<String> = emptySet(),
-    val playingPlaylistId: Long? = null,
-)
-
 /**
- * V5.3.3: the play-count statistics screen.
+ * The screen-facing facade.
  *
- * [records] is the raw event list for the selected window; the tallies and the
- * histogram are derived from it so switching range only re-queries the database
- * instead of re-deriving everything twice.
+ * Work is delegated to four stores - [MediaLibraryStore] (scan + library),
+ * [PlayerUiStore] (transport + equalizer), [StatsStore] and [UpdateStore] -
+ * and everything below this class is just forwarding. The public surface is
+ * unchanged, so the screens did not have to move with the split.
  */
-data class StatsUiState(
-    val range: StatsRange = StatsRange.WEEK,
-    val loading: Boolean = false,
-    val records: List<PlayRecord> = emptyList(),
-    val tallies: List<PlayTally> = emptyList(),
-    val buckets: List<StatsBucket> = emptyList(),
-    val totalPlays: Int = 0,
-    val error: String? = null,
-)
-
-/** V1.0.2: 「检查更新」的四种结果。 */
-enum class UpdateStatus { IDLE, CHECKING, UP_TO_DATE, AVAILABLE, FAILED }
-
-/**
- * V1.0.2: 设置页「检查更新」的一次结果。
- *
- * [checkSeq] 每次检查完成后递增，界面用它触发「更新内容公告」对话框——
- * 用序号而不是状态值，是因为连续两次检查都得到 AVAILABLE 也应当各弹一次。
- */
-data class UpdateCheckState(
-    val status: UpdateStatus = UpdateStatus.IDLE,
-    val currentVersion: String = "",
-    val latest: UpdateInfo? = null,
-    val message: String? = null,
-    val checkSeq: Int = 0,
-)
-
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val localScanner = LocalMusicScanner(app)
-    private val safScanner = SafMusicScanner(app)
     private val repo = MusicRepository(app)
-    private val settingsStore = LxApp.instance.settingsStore
+    private val settingsStore: SettingsStore = LxApp.instance.settingsStore
 
-    private val _tab = MutableStateFlow(HomeTab.LOCAL)
-    val tab: StateFlow<HomeTab> = _tab.asStateFlow()
-
-    private val _local = MutableStateFlow(LocalUiState())
-    val local: StateFlow<LocalUiState> = _local.asStateFlow()
-
-    private val _library = MutableStateFlow(LibraryUiState())
-    val library: StateFlow<LibraryUiState> = _library.asStateFlow()
-
-    private val _player = MutableStateFlow(PlayerState())
-    val player: StateFlow<PlayerState> = _player.asStateFlow()
-
-    private val _equalizer = MutableStateFlow(EqualizerState())
-    val equalizer: StateFlow<EqualizerState> = _equalizer.asStateFlow()
-
-    val playerController = PlayerController(app)
-
-    /** V5.1-1: fired when a user tap should open the full-screen player. */
-    val openNowPlaying = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-
-    /** V5.1-1: start playback AND open the full-screen player. */
-    private fun playAndOpen(list: List<MusicInfo>, index: Int) {
-        if (list.isEmpty() || index !in list.indices) return
-        playerController.setQueue(list, index)
-        openNowPlaying.tryEmit(Unit)
+    val libraryStore = MediaLibraryStore(app, repo, settingsStore, viewModelScope)
+    val playerUi = PlayerUiStore(app, settingsStore, viewModelScope)
+    val statsStore = StatsStore(repo, viewModelScope)
+    val updateStore = UpdateStore(settingsStore, viewModelScope)
+    val backupStore = BackupStore(app, settingsStore, viewModelScope) {
+        libraryStore.local.value.allTracks
     }
 
-    /** User preferences (theme, folders, playback, lyrics). */
-    val settings: StateFlow<AppSettings> = settingsStore.state
+    private val _tab = kotlinx.coroutines.flow.MutableStateFlow(HomeTab.LOCAL)
+    val tab: StateFlow<HomeTab> = _tab
 
+    // ---------------- forwarded state ----------------
+
+    val local: StateFlow<LocalUiState> get() = libraryStore.local
+    val library: StateFlow<LibraryUiState> get() = libraryStore.library
+    val scanning: StateFlow<Boolean> get() = libraryStore.scanning
+    val player: StateFlow<PlayerState> get() = playerUi.player
+    val equalizer: StateFlow<EqualizerState> get() = playerUi.equalizer
+    val stats: StateFlow<StatsUiState> get() = statsStore.stats
+
+    /** This calendar year, summarised. Independent of the range chips. */
+    val annual: StateFlow<AnnualReport?> get() = statsStore.annual
+    val updateCheck: StateFlow<UpdateCheckState> get() = updateStore.updateCheck
+    val backup: StateFlow<BackupUiState> get() = backupStore.state
+
+    val playerController get() = playerUi.controller
+    val openNowPlaying get() = playerUi.openNowPlaying
+
+    val settings: StateFlow<AppSettings> = settingsStore.state
     val versionName: String get() = BuildConfig.VERSION_NAME
 
-    // ---------------- check for updates (V1.0.2) ----------------
+    // ---------------- navigation (curtain stack) ----------------
 
-    private val _update = MutableStateFlow(UpdateCheckState(currentVersion = BuildConfig.VERSION_NAME))
-    val updateCheck: StateFlow<UpdateCheckState> = _update.asStateFlow()
+    /** Which full-screen pages are raised over the stage, oldest first. */
+    val routes = RouteStack()
 
-    private var updateSeq = 0
+    // ---------------- backup ----------------
 
-    /**
-     * V1.0.2: 设置页「检查更新」。
-     *
-     * 拉 GitHub 上的 `releases/latest`，把 tag 与本机 [versionName] 比较。
-     * 网络在 IO 线程，结果落到 [updateCheck]，由界面弹「更新内容公告」对话框。
-     */
-    fun checkForUpdates() = runUpdateCheck(silent = false)
+    /** Writes a backup to the location the user picked. */
+    fun exportBackup(uri: Uri) = backupStore.export(uri, versionName)
 
-    /**
-     * V1.0.3: 启动时的静默检查（每 24h 一次，节流时间戳持久化）。
-     *
-     * 与 [checkForUpdates] 共用结果流，但只在「发现新版本」时打扰用户：
-     * 静默检查失败或"已是最新"都退回 IDLE——本应用可能全程离线，
-     * 设置页副标题不该显示一条用户从没主动发起过的检查结果。
-     */
-    fun maybeCheckForUpdatesOnStartup() {
-        if (_update.value.status != UpdateStatus.IDLE) return
-        if (!settingsStore.state.value.autoCheckUpdates) return
-        val now = System.currentTimeMillis()
-        if (now - settingsStore.state.value.lastUpdateCheckAt < UPDATE_CHECK_INTERVAL_MS) return
-        settingsStore.setLastUpdateCheckAt(now)
-        runUpdateCheck(silent = true)
+    /** Restores from the location the user picked, then refreshes the library. */
+    fun importBackup(uri: Uri) {
+        backupStore.import(uri)
+        // The import writes favourites / history straight to the database; the
+        // in-memory library state has to be re-read or the lists stay stale
+        // until the next app start.
+        libraryStore.refreshLibrary()
     }
 
-    /** V1.1.4: 进应用时是否自动检查更新（设置页开关）。 */
-    fun setAutoCheckUpdates(on: Boolean) = settingsStore.setAutoCheckUpdates(on)
+    fun acknowledgeBackup() = backupStore.acknowledge()
 
-    private fun runUpdateCheck(silent: Boolean) {
-        if (_update.value.status == UpdateStatus.CHECKING) return
-        val current = BuildConfig.VERSION_NAME
-        _update.value = UpdateCheckState(status = UpdateStatus.CHECKING, currentVersion = current)
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching { UpdateChecker().fetchLatest().getOrThrow() }
-            }
-            updateSeq += 1
-            _update.value = result.fold(
-                onSuccess = { info ->
-                    when {
-                        UpdateChecker.isNewer(info.tagName, current) ->
-                            UpdateCheckState(UpdateStatus.AVAILABLE, current, info, checkSeq = updateSeq)
-                        silent -> UpdateCheckState(currentVersion = current)
-                        else ->
-                            UpdateCheckState(UpdateStatus.UP_TO_DATE, current, info, checkSeq = updateSeq)
-                    }
-                },
-                onFailure = { e ->
-                    when {
-                        silent -> UpdateCheckState(currentVersion = current)
-                        else -> UpdateCheckState(
-                            status = UpdateStatus.FAILED,
-                            currentVersion = current,
-                            message = e.message ?: "检查更新失败",
-                            checkSeq = updateSeq,
-                        )
-                    }
-                },
-            )
-        }
+    fun openSettings() = routes.open(Route.Settings)
+    fun closeSettings() = routes.close(Route.Settings)
+    fun openFolderManager() = routes.open(Route.Folders)
+    fun closeFolderManager() = routes.close(Route.Folders)
+
+    fun openStats() {
+        routes.open(Route.Stats)
+        statsStore.refresh()
     }
 
+    fun closeStats() = routes.close(Route.Stats)
+
+    fun openQueue() = routes.open(Route.Queue)
+    fun closeQueue() = routes.close(Route.Queue)
+    fun openEqualizer() = routes.open(Route.Equalizer)
+    fun closeEqualizer() = routes.close(Route.Equalizer)
+    fun openNowPlayingCurtain() = routes.open(Route.NowPlaying)
+    fun closeNowPlayingCurtain() = routes.close(Route.NowPlaying)
+
     /**
-     * V5.3-2: the track the user listened to last, resolved against the local
-     * library so the home screen can offer a one-tap "continue listening"
-     * card. Recomputed whenever the library or the saved marker changes.
+     * Opens the album or artist page for [group].
+     *
+     * Only the key is remembered - see [Route.Group] for why the object itself
+     * cannot be handed over.
      */
-    val lastPlayed: StateFlow<MusicInfo?> = combine(settingsStore.state, _local) { st, lib ->
+    fun openGroup(group: MusicGroup) = routes.open(Route.Group(group.key))
+
+    /**
+     * Closes the topmost group page.
+     *
+     * A group page can be opened on top of another one (an album from a search,
+     * then that artist), so this closes the newest rather than clearing them all.
+     */
+    fun closeGroup() {
+        routes.stack.value.lastOrNull { it is Route.Group }?.let(routes::close)
+    }
+
+    /** Resolves a group route against the current library. */
+    fun groupByKey(route: Route.Group): MusicGroup? =
+        libraryStore.groupByKey(route.groupKey, route.kind)
+
+    /** Plays a whole group starting from its first track. */
+    fun playGroupShuffled(group: MusicGroup) {
+        if (group.tracks.isEmpty()) return
+        val shuffled = group.tracks.shuffled()
+        playerUi.play(shuffled, 0)
+        routes.open(Route.NowPlaying)
+    }
+
+    // ---------------- derived ----------------
+
+    /**
+     * The track the user listened to last, resolved against the local library
+     * so the home screen can offer a one-tap "continue listening" card.
+     */
+    val lastPlayed: StateFlow<MusicInfo?> = combine(settingsStore.state, local) { st, lib ->
         st.lastPlayedId?.let { id -> lib.allTracks.firstOrNull { it.id == id } }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /**
-     * V1.1.0: 最近播过的本地曲目（play_history 表，已按 id 去重），给
-     * 「正在听」页的最近一排横滑封面用。空着不代表错——第一次扫描完就是空的。
+     * The most recently played local tracks, for the horizontal cover rail on
+     * 「正在听」. Empty is not an error - it is empty after the first scan too.
      */
-    val recentLocal: StateFlow<List<MusicInfo>> = _library
+    val recentLocal: StateFlow<List<MusicInfo>> = library
         .map { lib -> lib.recent.filter { it.isLocal }.distinctBy { it.id }.take(12) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** V5.3-2: resume the card track inside the whole local queue. */
+    /** Resume the card track inside the whole local queue. */
     fun resumeLastPlayed() {
         val track = lastPlayed.value ?: return
-        val list = _local.value.allTracks
+        val list = local.value.allTracks
         val at = list.indexOfFirst { it.id == track.id }
-        if (at >= 0) playAndOpen(list, at) else playAndOpen(listOf(track), 0)
+        if (at >= 0) playerUi.playAndOpen(list, at) else playerUi.playAndOpen(listOf(track), 0)
     }
-
-    /** True while the settings screen should be shown. */
-    private val _showSettings = MutableStateFlow(false)
-    val showSettings: StateFlow<Boolean> = _showSettings.asStateFlow()
-
-    /** True while the scan-folder manager should be shown. */
-    private val _showFolderManager = MutableStateFlow(false)
-    val showFolderManager: StateFlow<Boolean> = _showFolderManager.asStateFlow()
-
-    // ---------------- play statistics (V5.3.3) ----------------
-
-    private val _stats = MutableStateFlow(StatsUiState())
-    val stats: StateFlow<StatsUiState> = _stats.asStateFlow()
-
-    private val _showStats = MutableStateFlow(false)
-    val showStats: StateFlow<Boolean> = _showStats.asStateFlow()
-
-    fun openStats() {
-        _showStats.value = true
-        refreshStats()
-    }
-
-    fun closeStats() { _showStats.value = false }
-
-    /** Switches the window and re-reads only that window's events. */
-    fun setStatsRange(range: StatsRange) {
-        if (_stats.value.range == range) return
-        _stats.value = _stats.value.copy(range = range)
-        refreshStats()
-    }
-
-    /**
-     * Rebuilds the statistics from the stored play events.
-     *
-     * The aggregation itself lives in [PlayStats], which is pure, so this method
-     * only fetches the window and hands it over.
-     */
-    fun refreshStats() {
-        viewModelScope.launch {
-            _stats.value = _stats.value.copy(loading = true, error = null)
-            val range = _stats.value.range
-            val now = System.currentTimeMillis()
-            try {
-                val records = repo.playRecords(PlayStats.windowStart(range, now), now)
-                _stats.value = _stats.value.copy(
-                    loading = false,
-                    records = records,
-                    tallies = PlayStats.tally(records),
-                    buckets = PlayStats.buckets(records, range, now),
-                    totalPlays = PlayStats.totalPlays(records),
-                    error = null,
-                )
-            } catch (e: Exception) {
-                _stats.value = _stats.value.copy(loading = false, error = e.message)
-            }
-        }
-    }
-
-    /** Plays a track straight from the statistics list. */
-    fun playStatsTrack(tally: PlayTally) {
-        val list = _stats.value.tallies.map { it.music }
-        val at = list.indexOfFirst { it.id == tally.music.id }.coerceAtLeast(0)
-        if (list.isNotEmpty()) playAndOpen(list, at)
-    }
-
-    /** Wipes the play events; the tallies and the chart go empty with them. */
-    fun clearPlayStats() {
-        viewModelScope.launch {
-            repo.clearPlayEvents()
-            refreshStats()
-        }
-    }
-
-    /** True while a local scan is running (drives the progress indicator). */
-    private val _scanning = MutableStateFlow(false)
-    val scanning: StateFlow<Boolean> = _scanning.asStateFlow()
 
     init {
-        playerController.connect()
-        // V5.1-4: persist mode flips the moment the user makes them.
-        playerController.onModeChanged = { mode, shuf ->
+        playerUi.controller.connect()
+        // Persist mode flips the moment the user makes them.
+        playerUi.controller.onModeChanged = { mode, shuf ->
             settingsStore.setRepeatMode(mode.name)
             settingsStore.setShuffle(shuf)
         }
-        // V5.1-3: throttled last-played persistence.
-        playerController.onProgress = { id, pos ->
-            settingsStore.setLastPlayed(id, pos)
-        }
-        // V5.1-3/4: once settings are loaded, replay saved modes and restore
-        // the last-played track silently (paused, at its saved position).
+        // Throttled last-played persistence.
+        playerUi.controller.onProgress = { id, pos -> settingsStore.setLastPlayed(id, pos) }
+
         viewModelScope.launch {
             settingsStore.loaded.first()
             val st = settingsStore.state.value
-            playerController.applyPersistedModes(
-                when (st.repeatMode) {
-                    "ALL" -> RepeatMode.ALL
-                    "ONE" -> RepeatMode.ONE
-                    else -> RepeatMode.OFF
-                },
-                st.shuffle,
-            )
-            // V6.1: 均衡器曲线是「用户的选择」，不是播放器状态。效果器绑在音频会话上，
-            // 每次重建都归零，所以要在播放器第一次 attach 之前把持久化的快照交给
-            // EqualizerController，由它在 attach 后灌回去。
-            playerController.equalizer.setProfile(st.eq)
+            playerUi.applyPersistedModes(st)
             restoreLastPlayed(st)
-            // V6.1.1: read *after* `loaded` flips. This used to sit at the end of
-            // init reading `state.value` directly, which is the defaults object
-            // until the first DataStore emission lands - a user who turned
-            // autoscan off still got a full library scan on every boot.
-            if (st.autoScanOnStart) scanLocal()
+            if (st.autoScanOnStart) libraryStore.scanLocal()
         }
-        // V5.3.3 (Q4): a collapsed queue is repaired at press time, not only at
-        // restore time, so "next" never silently does nothing.
-        playerController.onNeedBackfill = { currentId -> libraryContextFor(currentId) }
-        playerController.onTrackStarted = { music ->
+
+        // A collapsed queue is repaired at press time, not only at restore time,
+        // so "next" never silently does nothing.
+        playerUi.controller.onNeedBackfill = { currentId -> libraryContextFor(currentId) }
+        playerUi.controller.onTrackStarted = { music ->
             viewModelScope.launch {
-                // V5.3.6: the two histories are independent switches. 最近播放 is
-                // opt-outable privacy; the play-count statistics are not, and used
-                // to be silenced whenever 记录历史 was off (HANDOVER §9-7).
+                // The two histories are independent switches: 最近播放 is
+                // opt-outable privacy, the play counts are their own toggle.
                 val policy = settingsStore.state.value.recordPolicy()
                 if (policy.history) {
                     repo.markPlayed(music)
-                    refreshLibrary()
+                    libraryStore.refreshLibrary()
                 }
                 if (policy.stats) repo.logPlay(music)
             }
         }
-        viewModelScope.launch { playerController.state.collect { _player.value = it } }
-        playerController.equalizer.onStateChanged = { _equalizer.value = it }
-        _equalizer.value = playerController.equalizer.state
-        viewModelScope.launch {
-            settingsStore.state.collect { applyPlaybackSettings(it) }
-        }
-        refreshLibrary()
+        libraryStore.onTrackGone = { id -> playerUi.controller.forgetTrack(id) }
+
+        playerUi.startMirrors()
+        viewModelScope.launch { settingsStore.state.collect { playerUi.applyPreferences(it) } }
+        libraryStore.refreshLibrary()
     }
 
-    /**
-     * V5.1-3: silently reload the last played track at its saved position.
-     * Only local tracks are restorable (online would require network at boot);
-     * unknown ids are cleared so a dead marker never blocks the next save.
-     */
-    private fun restoreLastPlayed(st: AppSettings) {
-        val id = st.lastPlayedId
-        if (id.isNullOrBlank()) return
-        viewModelScope.launch {
-            val track = _local.value.allTracks.firstOrNull { it.id == id }
-                ?: repo.recent().firstOrNull { it.id == id && it.isLocal }
-            if (track == null) {
-                settingsStore.setLastPlayed(null, 0L)
-                playerController.clearSavedProgress()
-                return@launch
-            }
-            playerController.prepareRestored(track, st.lastPlayedPosMs)
-            // V5.5-3: restore yields a single-track queue which breaks shuffle;
-            // backfill the full context once the scan settles.
-            viewModelScope.launch {
-                val ordered = libraryContextFor(track.id)
-                if (ordered.size > 1) playerController.backfillQueue(ordered, track.id)
-            }
-        }
-    }
+    // ---------------- update checking ----------------
 
-    /**
-     * The ordered queue context that should surround [currentId].
-     *
-     * Waits for the first finished scan, then prefers the in-memory library and
-     * falls back to the persisted recent list (which is how a track is found
-     * before any scan has run). Returns an empty list when the track is unknown,
-     * which callers read as "nothing to backfill".
-     *
-     * Shared by the restore path and [PlayerController.onNeedBackfill] so the two
-     * triggers cannot drift apart.
-     */
-    private suspend fun libraryContextFor(currentId: String): List<MusicInfo> {
-        _local.first { !it.loading }
-        val all = _local.value.allTracks
-        val track = all.firstOrNull { it.id == currentId }
-            ?: repo.recent().firstOrNull { it.id == currentId && it.isLocal }
-            ?: return emptyList()
-        return buildRestoreContext(all, track)
-    }
-
-    /**
-     * V5.5-3: queue context for a restored track - its group order with the
-     * track placed at its natural position (simplest correct slice: whole
-     * library ordered so the restored track sits mid-list).
-     */
-    private fun buildRestoreContext(
-        all: List<MusicInfo>,
-        track: MusicInfo,
-    ): List<MusicInfo> {
-        val rest = all.filter { it.id != track.id }
-        val at = (all.size / 2).coerceIn(0, rest.size)
-        return rest.subList(0, at) + track + rest.subList(at, rest.size)
-    }
-
-    /** Mirrors lyric-related preferences onto the player. */
-    private fun applyPlaybackSettings(s: AppSettings) {
-        // V1.1.0: 歌词三个偏好现在住在 LyricController（与 equalizer 对称）。
-        playerController.lyricController.offsetMs = s.lyricOffsetMs
-        playerController.lyricController.preferLrcFile = s.preferLrcFile
-        playerController.lyricController.readEmbedded = true
-        // 卡死看门狗阈值跟着设置走。
-        playerController.watchdog.stallMs = s.watchdogStallMs
-        playerController.watchdog.bufferingMs = s.watchdogBufferingMs
-    }
-
-    fun setTab(t: HomeTab) {
-        _tab.value = t
-        if (t == HomeTab.LIBRARY) refreshLibrary()
-    }
-
-    // ---------------- local music ----------------
-
-    /**
-     * Loads the cached library first, then rescans in the background.
-     *
-     * With no authorised folders the legacy MediaStore scan is used, so existing
-     * users keep their library until they pick a folder.
-     */
-    fun scanLocal() {
-        _local.value = _local.value.copy(loading = true, error = null)
-        viewModelScope.launch {
-            try {
-                // 1. instant paint from the Room cache
-                val cached = withContext(Dispatchers.IO) {
-                    repo.cachedLocalTracks().map { LocalTrackMapper.toMusic(it) }
-                }
-                if (cached.isNotEmpty()) {
-                    _local.value = _local.value.copy(loading = false, allTracks = cached)
-                    recomputeLocal()
-                    // V1.1.5: repair deletes that died with the process (the
-                    // system confirm dialog can outlive us).
-                    reconcilePendingDeletes(cached)
-                }
-                // 2. background refresh
-                val folders = settingsStore.state.value.scanFolders.toList()
-                val manual = settingsStore.state.value.manualUris.toList()
-                val fresh = if (folders.isEmpty()) {
-                    localScanner.scan()
-                } else {
-                    safScanner.scanFolders(
-                        treeUris = folders,
-                        readEmbeddedCover = settingsStore.state.value.readEmbeddedCover,
-                        onProgress = { count -> _scanning.value = count > 0 },
-                    ) + manual.mapNotNull { u ->
-                        runCatching { safScanner.readSingle(Uri.parse(u), settingsStore.state.value.readEmbeddedCover) }.getOrNull()
-                    }
-                }
-                _scanning.value = false
-                val kept = LocalLibrary.prune(cached, fresh)
-                val merged = LocalLibrary.merge(fresh, kept)
-                _local.value = _local.value.copy(loading = false, allTracks = merged)
-                recomputeLocal()
-                withContext(Dispatchers.IO) {
-                    repo.clearFolderCache()
-                    repo.upsertLocalTracks(merged.map { LocalTrackMapper.toEntity(it, it.extra["origin"] ?: "folder") })
-                }
-            } catch (e: Exception) {
-                _scanning.value = false
-                _local.value = _local.value.copy(loading = false, error = e.message)
-            }
-        }
-    }
-
-    fun setLocalGroup(g: LocalGroup) {
-        _local.value = _local.value.copy(group = g)
-        recomputeLocal()
-    }
-
-    fun setLocalQuery(q: String) {
-        _local.value = _local.value.copy(query = q)
-        recomputeLocal()
-    }
-
-    fun setLocalSort(sort: LocalSort) {
-        _local.value = _local.value.copy(sort = sort)
-        recomputeLocal()
-    }
-
-    private fun recomputeLocal() {
-        val s = _local.value
-        val base = s.allTracks
-        val filtered = LocalLibrary.sort(LocalLibrary.search(base, s.query), s.sort)
-        when (s.group) {
-            LocalGroup.SONGS ->
-                _local.value = s.copy(songs = filtered, groups = emptyList())
-            LocalGroup.ALBUMS ->
-                _local.value = s.copy(songs = emptyList(), groups = LocalLibrary.byAlbum(filtered))
-            LocalGroup.ARTISTS ->
-                _local.value = s.copy(songs = emptyList(), groups = LocalLibrary.byArtist(filtered))
-        }
-    }
-
-    fun playLocal(index: Int) {
-        val list = _local.value.songs
-        if (index in list.indices) playAndOpen(list, index) // V5.1-1
-    }
-
-    fun playGroup(group: MusicGroup, startIndex: Int = 0) {
-        if (group.tracks.isNotEmpty()) playerController.setQueue(group.tracks, startIndex)
-    }
-
-    // ---------------- library ----------------
-
-    fun refreshLibrary() {
-        viewModelScope.launch {
-            val favs = repo.favorites()
-            val recent = repo.recent()
-            val lists = repo.playlists()
-            _library.value = _library.value.copy(
-                favorites = favs,
-                recent = recent,
-                playlists = lists,
-                favoriteIds = favs.map { it.id }.toSet(),
-            )
-        }
-    }
-
-    suspend fun isFavorite(musicId: String): Boolean = repo.isFavorite(musicId)
-
-    fun toggleFavorite(music: MusicInfo) {
-        viewModelScope.launch {
-            val nowFav = repo.toggleFavorite(music)
-            val favs = repo.favorites()
-            _library.value = _library.value.copy(
-                favorites = favs,
-                favoriteIds = favs.map { it.id }.toSet(),
-            )
-        }
-    }
-
-    fun createPlaylist(name: String, onDone: (Long) -> Unit = {}) {
-        viewModelScope.launch {
-            val id = repo.createPlaylist(name.ifBlank { "新建歌单" })
-            refreshLibrary()
-            onDone(id)
-        }
-    }
-
-    fun renamePlaylist(id: Long, name: String) {
-        viewModelScope.launch { repo.renamePlaylist(id, name); refreshLibrary() }
-    }
-
-    fun deletePlaylist(id: Long) {
-        viewModelScope.launch { repo.deletePlaylist(id); refreshLibrary() }
-    }
-
-    fun addToPlaylist(playlistId: Long, music: MusicInfo) {
-        viewModelScope.launch { repo.addToPlaylist(playlistId, music); refreshLibrary() }
-    }
-
-    fun removeFromPlaylist(playlistId: Long, musicId: String) {
-        viewModelScope.launch { repo.removeFromPlaylist(playlistId, musicId); refreshLibrary() }
-    }
-
-    fun playPlaylist(playlist: PlaylistWithTracks, startIndex: Int = 0) {
-        if (playlist.tracks.isNotEmpty()) playAndOpen(playlist.tracks, startIndex) // V5.1-1
-    }
-
-    fun playFavorites(startIndex: Int = 0) {
-        val favs = _library.value.favorites
-        if (favs.isNotEmpty()) playAndOpen(favs, startIndex) // V5.1-1
-    }
-
-    fun playRecent(startIndex: Int = 0) {
-        val recent = _library.value.recent
-        if (recent.isNotEmpty()) playAndOpen(recent, startIndex) // V5.1-1
-    }
-
-    fun clearHistory() {
-        viewModelScope.launch { repo.clearHistory(); refreshLibrary() }
-    }
+    fun checkForUpdates() = updateStore.check()
+    fun maybeCheckForUpdatesOnStartup() = updateStore.maybeCheckOnStartup()
+    fun setAutoCheckUpdates(on: Boolean) = updateStore.setAutoCheckUpdates(on)
 
     // ---------------- playback ----------------
+
+    fun togglePlayPause() = playerUi.togglePlayPause()
+    fun pause() = playerUi.pause()
+    fun seekTo(ms: Long) = playerUi.seekTo(ms)
+    fun next() = playerUi.next()
+    fun prev() = playerUi.prev()
+    fun cycleRepeat() = playerUi.cycleRepeat()
+    fun toggleShuffle() = playerUi.toggleShuffle()
+
+    fun playList(list: List<MusicInfo>, startIndex: Int = 0) {
+        if (list.isNotEmpty()) playerUi.play(list, startIndex)
+    }
 
     // ---------------- queue ----------------
 
-    fun queueJumpTo(index: Int) = playerController.playAt(index)
-    fun queueMove(from: Int, to: Int) = playerController.moveInQueue(from, to)
-    fun queueRemove(index: Int) = playerController.removeFromQueue(index)
+    fun queueJumpTo(index: Int) = playerUi.queueJumpTo(index)
+    fun queueMove(from: Int, to: Int) = playerUi.queueMove(from, to)
+    fun queueRemove(index: Int) = playerUi.queueRemove(index)
+    fun queueClear() = playerUi.clearQueue()
+    fun queueUndoRemove() = playerUi.queueUndoRemove()
+    val lastQueueRemoval: Pair<MusicInfo, Int>? get() = playerUi.lastQueueRemoval
+    fun addToQueueNext(music: MusicInfo) = playerUi.swapNext(listOf(music))
+    fun addToQueueLast(music: MusicInfo) = playerUi.append(listOf(music))
 
-    /** V1.1.0: the track the last queueRemove took out (for the undo snackbar). */
-    val lastQueueRemoval: Pair<MusicInfo, Int>?
-        get() = playerController.lastRemoved
+    // ---------------- library / local ----------------
 
-    /** V1.1.0: put the last removed queue track back. */
-    fun queueUndoRemove() = playerController.undoQueueRemoval()
-    fun queueClear() = playerController.clearQueue()
-
-    fun playList(list: List<MusicInfo>, startIndex: Int = 0) {
-        if (list.isNotEmpty()) playerController.setQueue(list, startIndex)
+    fun setTab(t: HomeTab) {
+        _tab.value = t
+        if (t == HomeTab.LIBRARY) libraryStore.refreshLibrary()
     }
 
-    fun addToQueueNext(music: MusicInfo) = playerController.playNext(listOf(music))
-    fun addToQueueLast(music: MusicInfo) = playerController.enqueue(listOf(music))
+    fun scanLocal() = libraryStore.scanLocal()
+    fun setLocalGroup(g: LocalGroup) = libraryStore.setLocalGroup(g)
+    fun setLocalQuery(q: String) = libraryStore.setLocalQuery(q)
+    fun setLocalSort(sort: LocalSort) = libraryStore.setLocalSort(sort)
+    fun refreshLibrary() = libraryStore.refreshLibrary()
 
-    // ---------------- playback ----------------
-
-    fun togglePlayPause() = playerController.togglePlayPause()
-    /** Pauses playback (used by the ACTION_AUDIO_BECOMING_NOISY receiver). */
-    fun pause() {
-        if (playerController.state.value.isPlaying) playerController.togglePlayPause()
+    fun playLocal(index: Int) {
+        val list = local.value.songs
+        if (index in list.indices) playerUi.playAndOpen(list, index)
     }
-    fun seekTo(ms: Long) = playerController.seekTo(ms)
-    fun next() { viewModelScope.launch { playerController.next() } }
-    fun prev() { viewModelScope.launch { playerController.prev() } }
-    fun cycleRepeat() = playerController.cycleRepeat()
-    fun toggleShuffle() = playerController.toggleShuffle()
+
+    fun playGroup(group: MusicGroup, startIndex: Int = 0) {
+        if (group.tracks.isEmpty()) return
+        playerUi.play(group.tracks, startIndex)
+        routes.open(Route.NowPlaying)
+    }
+
+    suspend fun isFavorite(musicId: String): Boolean = libraryStore.isFavorite(musicId)
+    fun toggleFavorite(music: MusicInfo) = libraryStore.toggleFavorite(music)
+    fun createPlaylist(name: String, onDone: (Long) -> Unit = {}) = libraryStore.createPlaylist(name, onDone)
+    fun renamePlaylist(id: Long, name: String) = libraryStore.renamePlaylist(id, name)
+    fun deletePlaylist(id: Long) = libraryStore.deletePlaylist(id)
+    fun addToPlaylist(playlistId: Long, music: MusicInfo) = libraryStore.addToPlaylist(playlistId, music)
+    fun removeFromPlaylist(playlistId: Long, musicId: String) = libraryStore.removeFromPlaylist(playlistId, musicId)
+    fun clearHistory() = libraryStore.clearHistory()
+
+    fun playPlaylist(playlist: PlaylistWithTracks, startIndex: Int = 0) {
+        if (playlist.tracks.isNotEmpty()) playerUi.playAndOpen(playlist.tracks, startIndex)
+    }
+
+    fun playFavorites(startIndex: Int = 0) {
+        val favs = library.value.favorites
+        if (favs.isNotEmpty()) playerUi.playAndOpen(favs, startIndex)
+    }
+
+    fun playRecent(startIndex: Int = 0) {
+        val recent = library.value.recent
+        if (recent.isNotEmpty()) playerUi.playAndOpen(recent, startIndex)
+    }
+
+    // ---------------- statistics ----------------
+
+    fun setStatsRange(range: StatsRange) = statsStore.setRange(range)
+    fun refreshStats() = statsStore.refresh()
+    fun clearPlayStats() = statsStore.clear()
+
+    fun playStatsTrack(tally: PlayTally) {
+        val list = stats.value.tallies.map { it.music }
+        val at = list.indexOfFirst { it.id == tally.music.id }.coerceAtLeast(0)
+        if (list.isNotEmpty()) playerUi.playAndOpen(list, at)
+    }
+
+    fun annualReport(year: Int = PlayStats.currentYear(), onDone: (AnnualReport) -> Unit) =
+        statsStore.annualReport(year, onDone)
 
     // ---------------- equalizer ----------------
 
-    // V6.1: 每次改动都回写一份快照。均衡器效果器绑在音频会话上，播放器一重建就归零，
-    // 光改效果器不落盘等于「每次重启都白调」——这正是用户报的那个问题。
-    // 只在用户改动时写、不在 settingsStore.state 的回调里写，避免 DataStore 自激。
-    fun eqSetEnabled(enabled: Boolean) = playerController.equalizer.setEnabled(enabled).also { persistEq() }
-    fun eqSetBand(bandIndex: Int, levelMb: Short) =
-        playerController.equalizer.setBandLevel(bandIndex, levelMb).also { persistEq() }
-    fun eqApplyPreset(preset: EqPreset) = playerController.equalizer.applyPreset(preset).also { persistEq() }
-    fun eqSetBass(strength: Int) = playerController.equalizer.setBassStrength(strength).also { persistEq() }
-    fun eqSetVirtualizer(strength: Int) =
-        playerController.equalizer.setVirtualizerStrength(strength).also { persistEq() }
-    fun eqSetLoudness(gainMb: Int) = playerController.equalizer.setLoudnessGainMb(gainMb).also { persistEq() }
-    fun eqReset() = playerController.equalizer.reset().also { persistEq() }
-
-    private var eqPersistJob: Job? = null
-
-    /** 有改动还没落盘。onCleared 靠它决定要不要补写。 */
-    @Volatile private var eqDirty = false
-
-    private fun persistEq() {
-        // V6.1.1: 滑杆的 onValueChange 是逐帧回调，直接落盘等于每拖一个像素写一次
-        // DataStore。合并成「停手 400ms 后写一次」：中间的每一帧本来也不会被谁读到。
-        eqDirty = true
-        eqPersistJob?.cancel()
-        eqPersistJob = viewModelScope.launch {
-            delay(EQ_PERSIST_DEBOUNCE_MS)
-            writeEqNow()
-        }
-    }
-
-    /**
-     * V6.1.2: 立刻把当前曲线写盘。
-     *
-     * 防抖窗口内关掉界面时，`eqPersistJob` 会随 `viewModelScope` 一起被取消——效果已经
-     * 听得到了，存档却没写，下次启动回到上一条曲线。`SettingsStore.setEq` 走的是 store
-     * 自己的 IO scope，所以这里可以在 `onCleared` 里安全地补写最后一次。
-     */
-    private fun writeEqNow() {
-        eqDirty = false
-        settingsStore.setEq(playerController.equalizer.snapshot())
-    }
+    fun eqSetEnabled(enabled: Boolean) = playerUi.eqSetEnabled(enabled)
+    fun eqSetBand(bandIndex: Int, levelMb: Short) = playerUi.eqSetBand(bandIndex, levelMb)
+    fun eqApplyPreset(preset: com.lxmusic.android.player.EqPreset) = playerUi.eqApplyPreset(preset)
+    fun eqSetBass(strength: Int) = playerUi.eqSetBass(strength)
+    fun eqSetVirtualizer(strength: Int) = playerUi.eqSetVirtualizer(strength)
+    fun eqSetLoudness(gainMb: Int) = playerUi.eqSetLoudness(gainMb)
+    fun eqReset() = playerUi.eqReset()
 
     // ---------------- settings ----------------
-    fun openSettings() { _showSettings.value = true }
-    fun closeSettings() { _showSettings.value = false }
 
     fun setThemeMode(mode: ThemeMode) = settingsStore.setThemeMode(mode)
     fun setThemeColor(id: String) = settingsStore.setThemeColor(id)
@@ -714,10 +357,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setPlayerSkin(skin: String) = settingsStore.setPlayerSkin(skin)
     fun setShowPlayerMeta(on: Boolean) = settingsStore.setShowPlayerMeta(on)
 
-    fun openFolderManager() { _showFolderManager.value = true }
-    fun closeFolderManager() { _showFolderManager.value = false }
-
-    /** Registers a persisted SAF tree permission and rescans (T2). */
+    /** Registers a persisted SAF tree permission and rescans. */
     fun addScanFolder(treeUri: String) {
         val ctx = getApplication<Application>()
         runCatching {
@@ -728,7 +368,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
         settingsStore.addScanFolder(treeUri)
-        scanLocal()
+        libraryStore.scanLocal()
     }
 
     fun removeScanFolder(treeUri: String) {
@@ -746,11 +386,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     repo.cachedLocalTracks().filter { it.uri.startsWith(treeUri) }.map { it.id }
                 )
             }
-            scanLocal()
+            libraryStore.scanLocal()
         }
     }
 
-    /** Registers a persisted permission for a single picked audio file (T3). */
+    /** Registers a persisted permission for a single picked audio file. */
     fun addManualFiles(uris: List<String>) {
         val ctx = getApplication<Application>()
         uris.forEach { u ->
@@ -762,7 +402,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             settingsStore.addManualUri(u)
         }
-        scanLocal()
+        libraryStore.scanLocal()
     }
 
     fun removeManualFile(uri: String) {
@@ -771,41 +411,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) {
                 repo.removeLocalTracks(repo.cachedLocalTracks().filter { it.uri == uri }.map { it.id })
             }
-            scanLocal()
+            libraryStore.scanLocal()
         }
     }
 
-    /** Removes a track from the library without touching the file (T4). */
-    fun removeFromLibrary(music: MusicInfo) {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) { repo.removeLocalTrack(music.id) }
-            _local.value = _local.value.copy(
-                allTracks = _local.value.allTracks.filterNot { it.id == music.id }
-            )
-            recomputeLocal()
-            refreshLibrary()
-        }
-    }
+    // ---------------- deletion ----------------
 
-    /** B1/B2: a MediaStore row that needs the system confirm dialog. MainActivity collects this. */
-    val deleteRequest = MutableSharedFlow<android.content.IntentSender>(extraBufferCapacity = 1)
+    /** A MediaStore row that needs the system confirm dialog. MainActivity collects this. */
+    val deleteRequest = kotlinx.coroutines.flow.MutableSharedFlow<android.content.IntentSender>(extraBufferCapacity = 1)
 
-    /** Deletes the underlying file (T4). Result reported through [onResult]. */
     fun deleteLocalFile(music: MusicInfo, onResult: (String) -> Unit = {}) {
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { LocalFileDeleter.delete(getApplication(), music) }
             when (result) {
                 is com.lxmusic.android.local.DeleteResult.Done -> {
-                    withContext(Dispatchers.IO) {
-                        com.lxmusic.android.local.LocalFileDeleter.dropCachedCover(getApplication(), music)
-                    }
-                    onDeleteConfirmed(music)
+                    libraryStore.dropCachedCover(music)
+                    libraryStore.onDeleteConfirmed(music)
                 }
                 is com.lxmusic.android.local.DeleteResult.NeedsConfirmation -> {
-                    // V1.1.5: persisted, not in-memory. The confirm dialog is a
-                    // separate activity result; the process can die while it is up,
-                    // leaving a deleted file behind a surviving DB row.
-                    settingsStore.setPendingDeletes(settingsStore.state.value.pendingDeletes + music.id)
+                    libraryStore.markPendingDelete(music.id)
                     deleteRequest.emit(result.sender)
                 }
                 is com.lxmusic.android.local.DeleteResult.Failed -> onResult(result.reason)
@@ -813,90 +437,72 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Called by MainActivity after the system delete dialog returns OK. */
-    fun onDeleteConfirmed(music: MusicInfo) {
-        viewModelScope.launch {
-            repo.removeLocalTrack(music.id)
-            settingsStore.setPendingDeletes(settingsStore.state.value.pendingDeletes - music.id)
-            // V1.1.5: also drop it from the player queue. Leaving the slot in place
-            // meant "next" could land on a URI that no longer resolves.
-            playerController.forgetTrack(music.id)
-            dropFromVisibleLists(music.id)
-            recomputeLocal()
-        }
-    }
-
-    /** Called when the user cancels the system dialog. */
-    fun onDeleteCancelled(music: MusicInfo) {
-        viewModelScope.launch {
-            settingsStore.setPendingDeletes(settingsStore.state.value.pendingDeletes - music.id)
-        }
-    }
-
-    /**
-     * V1.1.5: reconcile deletes interrupted by a process death.
-     *
-     * Called once on startup with the freshly loaded library. For every id that
-     * was waiting on the system dialog, keep it only if the file is still there.
-     */
-    fun reconcilePendingDeletes(tracks: List<MusicInfo>) {
-        val pending = settingsStore.state.value.pendingDeletes
-        if (pending.isEmpty()) return
-        viewModelScope.launch {
-            val byId = tracks.associateBy { it.id }
-            val gone = pending.filter { id -> byId[id]?.let { !trackExists(it) } ?: true }
-            if (gone.isEmpty()) {
-                settingsStore.setPendingDeletes(settingsStore.state.value.pendingDeletes - pending)
-                return@launch
-            }
-            withContext(Dispatchers.IO) { repo.removeLocalTracks(gone.toList()) }
-            gone.forEach { dropFromVisibleLists(it) }
-            settingsStore.setPendingDeletes(settingsStore.state.value.pendingDeletes - gone)
-            recomputeLocal()
-        }
-    }
-
-    /** Removes [id] from the cached library and from any playlist holding it. */
-    private suspend fun dropFromVisibleLists(id: String) {
-        _local.value = _local.value.copy(allTracks = _local.value.allTracks.filterNot { it.id == id })
-        recomputeLocal()
-        refreshLibrary()
-    }
-
-    private fun trackExists(m: MusicInfo): Boolean {
-        val raw = m.localPath ?: m.extra["uri"] ?: return false
-        return runCatching {
-            if (raw.startsWith("content://")) {
-                getApplication<Application>().contentResolver
-                    .openInputStream(android.net.Uri.parse(raw))?.use { true } ?: false
-            } else java.io.File(raw.replaceFirst("file://", "")).exists()
-        }.getOrDefault(false)
-    }
+    fun onDeleteConfirmed(music: MusicInfo) = libraryStore.onDeleteConfirmed(music)
+    fun onDeleteCancelled(music: MusicInfo) = libraryStore.onDeleteCancelled(music)
+    fun removeFromLibrary(music: MusicInfo) = libraryStore.removeFromLibrary(music)
+    fun reconcilePendingDeletes(tracks: List<MusicInfo>) = libraryStore.reconcilePendingDeletes(tracks)
 
     /** Clears favourites, playlists, history and every preference. */
     fun clearAllData() {
         viewModelScope.launch {
             repo.clearAllUserData()
             settingsStore.clearAll()
-            refreshLibrary()
+            libraryStore.refreshLibrary()
         }
+    }
+
+    // ---------------- restore ----------------
+
+    /**
+     * Silently reload the last played track at its saved position.
+     * Unknown ids are cleared so a dead marker never blocks the next save.
+     */
+    private fun restoreLastPlayed(st: AppSettings) {
+        val id = st.lastPlayedId
+        if (id.isNullOrBlank()) return
+        viewModelScope.launch {
+            val track = local.value.allTracks.firstOrNull { it.id == id }
+                ?: repo.recent().firstOrNull { it.id == id && it.isLocal }
+            if (track == null) {
+                settingsStore.setLastPlayed(null, 0L)
+                playerUi.controller.clearSavedProgress()
+                return@launch
+            }
+            playerUi.controller.prepareRestored(track, st.lastPlayedPosMs)
+            // Restore yields a single-track queue which breaks shuffle; backfill
+            // the full context once the scan settles.
+            viewModelScope.launch {
+                val ordered = libraryContextFor(track.id)
+                if (ordered.size > 1) playerUi.controller.backfillQueue(ordered, track.id)
+            }
+        }
+    }
+
+    /**
+     * The ordered queue context that should surround [currentId].
+     *
+     * Waits for the first finished scan, then prefers the in-memory library and
+     * falls back to the persisted recent list. Returns an empty list when the
+     * track is unknown, which callers read as "nothing to backfill".
+     */
+    private suspend fun libraryContextFor(currentId: String): List<MusicInfo> {
+        local.first { !it.loading }
+        val all = local.value.allTracks
+        val track = all.firstOrNull { it.id == currentId }
+            ?: repo.recent().firstOrNull { it.id == currentId && it.isLocal }
+            ?: return emptyList()
+        return buildRestoreContext(all, track)
+    }
+
+    /** Queue context for a restored track: the whole library, track mid-list. */
+    private fun buildRestoreContext(all: List<MusicInfo>, track: MusicInfo): List<MusicInfo> {
+        val rest = all.filter { it.id != track.id }
+        val at = (all.size / 2).coerceIn(0, rest.size)
+        return rest.subList(0, at) + track + rest.subList(at, rest.size)
     }
 
     override fun onCleared() {
-        // V6.1.2: 防抖窗口里可能还有一次没落盘的曲线（见 writeEqNow）。
-        if (eqDirty) {
-            eqPersistJob?.cancel()
-            writeEqNow()
-        }
-        playerController.release()
+        playerUi.release()
         super.onCleared()
-    }
-
-    private companion object {
-        /** 滑杆停手多久之后落盘一次。 */
-        const val EQ_PERSIST_DEBOUNCE_MS = 400L
-
-        /** V1.0.3: 启动静默检查更新的最小间隔（24h）。 */
-        const val UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000L
     }
 }

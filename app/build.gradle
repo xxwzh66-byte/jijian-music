@@ -43,8 +43,11 @@ plugins {
 // V1.1.5: 无封面曲目不再假装有封面（扫描时探测 albumart，缺失走占位图标），
 // 删除功能补齐四处漏洞：播放队列同步移除、待删列表落盘、重启 reconcile、
 // 封面缓存随文件清理。包名与签名不变。
-ext.appVersionCode = 10
-ext.appVersionName = "1.1.5"
+// V1.1.6: 分组不再是一行文字。专辑/歌手有自己的页面（曲目表 + 播放全部），
+// 全屏页面从六个布尔值换成 Route 栈，MainViewModel 887 行的上帝对象拆成四个
+// store，加分群备份/恢复与「这一年」年度回顾。包名与签名不变，可从 1.1.5 覆盖安装。
+ext.appVersionCode = 11
+ext.appVersionName = "1.1.6"
 
 android {
     namespace = "com.lxmusic.android"
@@ -80,6 +83,23 @@ android {
                 // installs still work; CI always has the real one.
                 storeFile = file(System.getenv("JIJIAN_DEBUG_KEYSTORE")
                     ?: "${System.getProperty("user.home")}/.android/debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+        // V1.1.6: pin the debug keystore explicitly when one is provided.
+        //
+        // Left to itself AGP uses `~/.android/debug.keystore` and creates a
+        // `debug.keystore.lock` next to it; on a machine where that directory is
+        // not writable by the build the whole debug variant dies in
+        // `validateSigningDebug` with AccessDeniedException. Pointing the config
+        // at a keystore we own keeps the local loop working without touching
+        // the user profile. Unset -> AGP's own default, unchanged.
+        def dbgPath = System.getenv("JIJIAN_DEBUG_KEYSTORE")
+        if (dbgPath) {
+            debug {
+                storeFile = file(dbgPath)
                 storePassword = "android"
                 keyAlias = "androiddebugkey"
                 keyPassword = "android"
@@ -146,7 +166,6 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
-    implementation(libs.androidx.navigation.compose)
 
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)

@@ -1,6 +1,6 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.1.5** (`versionCode = 10`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.1.6** (`versionCode = 11`)
 
 一个从 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的
 音源架构出发、已经转型为**纯本地极简音乐播放器**的 Android 应用。
@@ -16,10 +16,11 @@ took the opposite direction: playback is local files only, through Media3.
 ```
 ┌──────────────────────────── Android app (Kotlin) ────────────────────────────┐
 │  Compose UI  ─▶  MainViewModel  ─▶  PlayerController ─▶ Media3 ExoPlayer     │
+│                       │  facade over 4 stores                                 │
 │                       │                    │                                  │
 │                       ▼                    ▼                                  │
 │              SettingsStore (DataStore)   QueueMirror (one playlist)          │
-│              Room DB v5                  RandomShuffleOrder (draws)          │
+│              Room DB v6                  RandomShuffleOrder (draws)          │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -76,12 +77,14 @@ app/src/main/java/com/lxmusic/android/
 ├── MainActivity.kt              # Compose entry point
 ├── CrashLogger.kt               # uncaught-exception handler -> filesDir/last_crash.txt
 ├── data/
-│   ├── db/AppDatabase.kt        # Room DB v5 (playlists, favorites, history, local_track, play_event)
+│   ├── db/AppDatabase.kt        # Room DB v6 (playlists, favorites, history, local_track, play_event)
 │   ├── model/MusicInfo.kt
 │   ├── repo/MusicRepository.kt  # single DB access point
-│   ├── settings/SettingsStore.kt# DataStore preferences (29 keys)
+│   ├── settings/SettingsStore.kt# DataStore preferences (30 keys)
 │   ├── settings/EqProfile.kt    # persistable tone curve (bands encode/decode)
-│   └── stats/PlayStats.kt       # pure play-count aggregation (day / week / all)
+│   ├── stats/PlayStats.kt       # pure play-count aggregation (day / week / all / year)
+│   └── backup/BackupCodec.kt    # .jjmbackup container + track fingerprint matcher
+│       backup/BackupRepository.kt # export / merge-import against Room
 ├── local/
 │   ├── LocalMusicScanner.kt     # MediaStore fallback scan
 │   ├── SafMusicScanner.kt       # SAF folder scan (T2)
@@ -112,11 +115,14 @@ app/src/main/java/com/lxmusic/android/
 │   ├── LxApp.kt                 # V1.1.3: shell wiring only, 200 lines
 │   ├── HomeChrome.kt            # V1.1.3: top bar / banner / mini player / stage body
 │   ├── shell/LxShell.kt         # V1.1.3: stage slots + curtains
-│   ├── MainViewModel.kt         # single state holder
+│   ├── shell/Route.kt           # V1.1.6: typed curtain stack (was 6 booleans)
+│   ├── state/                   # V1.1.6: MediaLibraryStore, PlayerUiStore, StatsStore,
+│   │                            #   UpdateStore, BackupStore (MainViewModel is a facade)
+│   ├── MainViewModel.kt         # facade: forwards flows/methods to the stores
 │   ├── CrashReportDialog.kt     # previous-run crash trace, copy/clear
 │   ├── components/              # TrackRow, LyricView, RotatingArtwork, PlayerSkin, ArtworkColors, SearchBar, Hints
 │   ├── neon/                    # Neon Vinyl design system: tokens, aurora, glass, controls, shell, NeonScreen scaffold
-│   ├── screens/                 # Local, Library, NowPlaying, Queue, Equalizer, Stats, FolderManager, Settings
+│   ├── screens/                 # Local, Library, GroupDetail, NowPlaying, Queue, Equalizer, Stats, FolderManager, Settings
 │   └── theme/                   # OledTokens / ColorPalettes / Theme
 ```
 
@@ -218,6 +224,49 @@ on your device. Respect copyright and the laws of your jurisdiction.
   independent of 播放时记录历史, which only governs the 最近播放 list — the two
   used to be wired together, so hiding 最近播放 silently froze the statistics.
 
+### Browsing albums and artists (V1.1.6)
+- Tapping an album or an artist opens its own page: large cover, artist, *N 首 ·
+  总时长*, the track list with two-digit positions, and 播放全部 / 随机播放.
+- Before V1.1.6 a whole album was one text row that played from the top when
+  tapped — a record shelf rendered as a file folder. The grouping data
+  (`MusicGroup.coverUrl`, `count`, `totalDuration`) was already there and
+  unused.
+- The detail page holds the **group key**, never the `MusicGroup` object:
+  `recomputeLocal()` rebuilds the grouping on every search keystroke, so a
+  captured object would go stale while the page is open.
+
+### Browsing model (V1.1.6)
+- Every full-screen page is a `Route` on a typed stack (`ui/shell/Route.kt`):
+  `Settings`, `Folders`, `Stats`, `Queue`, `Equalizer`, `NowPlaying`, and
+  `Group(key)` — the first one that carries an argument, which is why six
+  independent booleans became a stack.
+- `LxShell` still draws every curtain in a **fixed declared order** and only
+  asks the stack whether a route is open, so layering stays predictable
+  (settings is always above the queue) regardless of what the user opened first.
+- Back closes the topmost *visible* curtain, not the last-opened route.
+
+### Backup and restore (V1.1.6)
+- Settings → **备份** → export writes a `.jjmbackup` (a zip whose single entry is
+  `backup.json`) through the system file picker; no storage permission needed.
+- Carries favourites, playlists, play history, play events and 16 *taste*
+  settings (theme, EQ curve, lyric prefs). Deliberately **not** carried: the
+  scanning folders (SAF grants do not survive a device move), `pendingDeletes`
+  (another device's delete intent), `lastPlayedId` (may point at a file that is
+  gone) and the update-check throttle.
+- Restore **merges**, never replaces. Tracks are re-identified by a
+  title + artist + album + duration fingerprint, because ids are
+  `content://` URIs and change across devices; the report says how many were
+  exact hits, how many were matched by fingerprint, and how many files are
+  missing on this device.
+
+### This year (V1.1.6)
+- A 「这一年」 card on the statistics screen: plays, total hours, distinct
+  tracks, most-played artist, the one track that got repeated most.
+- It is a fact about the user, not a feature, so there is **no entry button** —
+  it appears when the year has something to say and stays out of the way
+  otherwise. Rendered above the histogram because it does not change with the
+  今日 / 本周 / 全部 chips.
+
 ### Crash reporting
 - `CrashLogger` chains the default uncaught-exception handler and writes the
   trace to both `filesDir/last_crash.txt` and
@@ -239,10 +288,13 @@ on your device. Respect copyright and the laws of your jurisdiction.
 ./gradlew :app:testDebugUnitTest
 ```
 
-237 unit tests across 26 classes, all green (run `./gradlew :app:testDebugUnitTest`):
+273 unit tests across 29 classes, all green (run `./gradlew :app:testDebugUnitTest`):
 
 | Test class | Cases | Covers |
 |---|---:|---|
+| `data/backup/BackupCodecTest` | 15 | **V1.1.6**: fingerprint ignores case/whitespace/sub-second drift, exact id wins over fingerprint, duplicates take the first local track, `report` splits exact / matched / missing, JSON round-trip, unknown future version and garbage rejected, zip **and** bare-JSON containers |
+| `data/stats/AnnualReportTest` | 10 | **V1.1.6**: year window is closed at both ends (future-stamped events from a restore cannot leak in), duration sums every play, blank singer collapses to 未知歌手, top artist/track tie-breaking, empty year returns a report instead of throwing |
+| `ui/shell/RouteStackTest` | 11 | **V1.1.6**: reopening a route is a no-op, two group routes with different keys coexist, `close` works out of order, `closeTop` follows the draw order not the open order, group kind derived from the `album:`/`artist:` prefix |
 | `lyric/EmbeddedLyricsTest` | 18 | ID3v2 USLT/TXXX, FLAC VorbisComment, Ogg/Opus, MP4 `©lyr`, GBK/UTF-8/BOM |
 | `data/stats/PlayStatsTest` | 17 | day/week bucketing, ranking, timezone (pinned `Asia/Shanghai`) |
 | `player/RandomShuffleStateTest` | 18 | **V1.0.1**: draw contract — next excludes the current track, prev excludes it too and additionally skips the track that just played, a draw is remembered until a track starts, `onTrackStarted` clears both, a 2-track queue can still step both ways |
@@ -260,7 +312,7 @@ on your device. Respect copyright and the laws of your jurisdiction.
 | `local/LocalLibraryMergeTest` | 6 | cache merge / prune semantics |
 | `player/RandomShuffleStateStalenessTest` | 6 | memo never goes out of range after the queue shrinks |
 | `ui/theme/OledTokensTest` | 6 | OLED token contrast ratios |
-| `data/SettingsRoundTripTest` | 11 | every preference key is written and read back through the *same* key constant — the "equalizer does not survive a restart" class of bug cannot hide behind a default-only assertion; the V1.0.2 update token is checked the same way |
+| `data/SettingsRoundTripTest` | 10 | every preference key is written and read back through the *same* key constant — the "equalizer does not survive a restart" class of bug cannot hide behind a default-only assertion; the V1.0.2 update token is checked the same way |
 | `net/UpdateCheckerTest` | 11 | **V1.0.2**: release-tag version comparison (leading `v`, numeric segments, prerelease suffix ordering) and GitHub release JSON parsing (first `.apk` asset, title fallback, graceful degradation on missing fields) — no network in unit tests |
 | `data/SettingsTest` | 4 | settings defaults (incl. flat EQ profile) / enum values |
 | `local/SafMusicScannerTest` | 5 | audio extension / mime detection |
@@ -277,6 +329,112 @@ explains the root causes behind them.
 `NeonTokensTest` is the same idea for the visual layer: it recomputes WCAG
 contrast over the *brightest possible* aurora composite on every palette, so a
 future "make it pop more" tweak cannot silently drop body text below AA.
+
+---
+
+## V1.1.6 — Albums become pages, pages become routes, and your data can leave the device (`versionCode = 11`)
+
+### Albums and artists got a page
+
+Until this version the library grouping was a dead end: `LocalScreen` rendered one
+`GroupRow` per album and tapping it played the whole album from track one. A
+record shelf that behaves like a file folder.
+
+The grouping data was already complete — `MusicGroup.coverUrl`, `count`,
+`totalSeconds` — it just had no screen to land on. `GroupDetailScreen` is that
+screen: 132 dp cover, artist, *N 首 · 总时长*, a numbered track list, and two
+actions (播放全部 / 随机播放). It serves albums and artists from one composable;
+an artist page drops the redundant subtitle line.
+
+The page holds the **group key**, not the `MusicGroup`: `recomputeLocal()`
+rebuilds every group on each keystroke of the search box, so an object captured
+at open time would silently show yesterday's track list.
+
+### Six booleans became a route stack
+
+`showSettings`, `showFolderManager`, `showStats`, `showQueue`, `showEqualizer`
+and `showNowPlaying` lived half in `MainViewModel` and half in `LxApp`. That was
+tolerable while every curtain was argument-free. An album page is the first one
+that is not — "open the group whose key is X" is not a boolean.
+
+`ui/shell/Route.kt` introduces a sealed `Route` (`Settings`, `Folders`, `Stats`,
+`Queue`, `Equalizer`, `NowPlaying`, `Group(key)`) and a `RouteStack` over a
+`StateFlow<List<Route>>`. `LxShell` keeps drawing every curtain in its declared
+order and only asks the stack whether a route is open, so the **layering** stays
+fixed (settings always above the queue) no matter the opening order, and Back
+closes the topmost *visible* curtain rather than the last-opened route.
+
+`navigation-compose` was declared in `libs.versions.toml` and never used once.
+It is gone. A real `NavHost` would also have fought the shell: the stage renders
+all curtains at once and animates the visible one in and out, which is not what
+`NavHost` does.
+
+### `MainViewModel` went from 887 lines to 508
+
+It was a god object running scanning, playback, library, statistics, updates and
+file deletion at once, and it reached for `LxApp.instance.settingsStore` instead
+of taking its dependencies. It is now a facade over five stores:
+
+| Store | Owns |
+|---|---|
+| `state/MediaLibraryStore` | scan, cache merge, grouping, favourites, playlists, delete bookkeeping |
+| `state/PlayerUiStore` | wraps `PlayerController`, queue ops, equalizer persistence |
+| `state/StatsStore` | range windows, tallies, this-year report |
+| `state/UpdateStore` | GitHub release check + 24 h throttle |
+| `state/BackupStore` | export / import through a `content://` uri |
+
+`ui/StateAliases.kt` re-exports the moved state classes, so not one screen or
+component had to change its imports.
+
+### Backup and restore
+
+Settings → **备份**. Export writes a `.jjmbackup` through the system picker; the
+file is a zip whose single entry is `backup.json`, which leaves room for cover
+art later without a format break. Restore reads that zip *or* a bare JSON file,
+because a user who renamed the entry should not be locked out of their own data.
+
+Ids are `content://` URIs (MediaStore) or SAF document URIs, so they change
+across devices and even across a factory reset. Restore therefore re-identifies
+tracks by a fingerprint of title + artist + album + duration, rounded to the
+second — two rips of the same song routinely differ by a few milliseconds. The
+report afterwards says *恢复 120 首（110 精确 / 10 指纹匹配），缺失 3 首*.
+
+Restore is a **merge**: favourites, playlists (same name reuses the playlist, new
+tracks append after `maxPosition`), history and play events are added, nothing is
+deleted. Settings that travel are the 16 that describe taste. Settings that do
+not: scanning folders (SAF grants do not survive a device move),
+`pendingDeletes` (that is another device's delete intent), `lastPlayedId` (may
+point at a file that is not here) and the update-check throttle.
+
+### This year
+
+The `play_event` table already kept a year of events; the statistics screen only
+ever folded them into 今日 / 本周 / 全部. `PlayStats.annualReport` collapses them
+into plays, total seconds, distinct tracks, most-played artist and the most
+repeated single track.
+
+It is shown as a card above the histogram — **no entry button**, because a year
+is a fact about the listener, not a feature to open. It renders nothing until
+the year has something to say.
+
+One bug the tests caught: `annualReport` used to filter only `playedAt >=
+yearStart`. A restore can bring in events stamped in the future, and those were
+counting toward this year. The window is now closed at both ends.
+
+### Dead code removed
+
+- Room **v5 → v6**: `song_list` and `list_item` tables plus `SongListDao` — a
+  leftover of the online-source era, zero call sites. `MIGRATION_5_6` drops them.
+- `MusicInfo.qualitys` and `QualityInfo`: zero references. No migration needed —
+  tracks live in the database as `musicJson`, and Gson ignores unknown keys.
+- `navigation-compose` (see above) and the empty `docs/adr/` directory.
+
+### Tests
+
+237 → **273 across 29 classes**, all green. The three new classes are
+`BackupCodecTest` (15), `RouteStackTest` (11) and `AnnualReportTest` (10).
+`BackupCodecTest` runs entirely on the JVM: no `Uri`, no `ContentResolver`, so
+the matching rules are testable without an emulator.
 
 ---
 

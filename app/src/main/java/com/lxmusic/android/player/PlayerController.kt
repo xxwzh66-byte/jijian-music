@@ -489,16 +489,6 @@ class PlayerController(
         if (!mirror.insert(listOf(music), slot)) scope.launch { playIndex(currentIndex) }
     }
 
-    /**
-     * V1.1.5: drop every queue slot holding [id].
-     *
-     * Called when the backing file is deleted. Without this the slot stayed in
-     * the queue pointing at a URI that no longer resolves, so the next "next"
-     * press landed on a ghost and `playIndex` reported the error.
-     *
-     * If the deleted track is the one playing, playback stops. Jumping to an
-     * arbitrary neighbour after a delete reads as a glitch, not a feature.
-     */
     fun forgetTrack(id: String) {
         val r = QueueLogic.removeAll(queue, currentIndex) { it.id == id }
         if (!r.changed) return
@@ -511,12 +501,8 @@ class PlayerController(
                 current = null, isPlaying = false, positionMs = 0, durationMs = 0,
             )
         } else if (r.playingRemoved) {
-            // The player still points at the removed item; re-issue the survivor
-            // so ExoPlayer and the queue agree again.
             scope.launch { playIndex(currentIndex) }
         } else {
-            // Mirror positions shifted; drop it and let the next
-            // ensureMirrorPlaylist() rebuild from the queue we now hold.
             mirror.dropToSingleItem()
         }
         resetShuffle()

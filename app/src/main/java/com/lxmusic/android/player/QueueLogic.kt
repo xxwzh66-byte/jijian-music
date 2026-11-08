@@ -40,15 +40,6 @@ object QueueLogic {
         val changed: Boolean,
     )
 
-    /**
-     * V1.1.5: removes every entry satisfying [predicate], keeping [index] on the
-     * same track when that track survives.
-     *
-     * Deleting a file has to take its queue slots with it. The single-entry
-     * [remove] cannot express this: it stops at the first match and returns
-     * `shouldPlay` for the whole call, but a deletion may match several slots
-     * and what matters afterwards is only whether the *playing* one went away.
-     */
     fun <T> removeAll(list: List<T>, index: Int, predicate: (T) -> Boolean): RemoveManyResult<T> {
         val playing = list.getOrNull(index)
         val kept = list.filterNot(predicate)

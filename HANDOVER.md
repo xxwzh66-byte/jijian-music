@@ -1,9 +1,9 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 10 / versionName "1.1.5"**
-> 报告版本：**V1.1.5**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 66 个 .kt；`app/src/test/java` 26 个 .kt / **237 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.1.5-vc10.apk`（release 签名，字节数以 build/apk 实测为准）
+> 交接版本：**versionCode 11 / versionName "1.1.6"**
+> 报告版本：**V1.1.6**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 80 个 .kt；`app/src/test/java` 29 个 .kt / **273 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.1.6-vc11.apk`（release 签名，字节数以 build/apk 实测为准）
 
 ---
 
@@ -23,6 +23,10 @@
   **没有 cycle、没有播放历史栈**——`PlayHistory.kt` 与 `advanceCycle` 都已删除。
   静默停顿由 `StallWatchdog` 兜底；均衡器曲线持久化在 `AppSettings.eq`。
   见第五、九节
+- **V1.1.6 结构与产品**：全屏页面从六个布尔值换成带类型的 `Route` 栈
+  （`ui/shell/Route.kt`，`Group(key)` 是第一个带参数的页面）；`MainViewModel`
+  887 → 508 行，降级成五个 store 的门面（`ui/state/`）；专辑/歌手有了自己的页面；
+  新增 `.jjmbackup` 备份恢复与「这一年」年度回顾。见第十四节
 - **V1.0.1 耳机按键修复**：media3 的 `seekToPrevious()` 有两条路会变成「重播当前曲」——
   位置超过 `getMaxSeekToPreviousPosition()`（默认 3s），或 `getPreviousIndex()` 返回
   `-1`。V1.0 只关了前者；V1.0.1 让抽签**永不返回 -1**，把后者也堵掉。
@@ -30,7 +34,7 @@
   `player/QueueMirror.kt`（镜像 playlist 的五步收在一处），替代 `PlayerController`
   里八处复制粘贴。见第九节「V1.0.1 变更」
 - **播放内核**：Media3 ExoPlayer 1.4.1 + `MediaSessionService`
-- **持久化**：Room 2.6.1（v4）+ DataStore Preferences
+- **持久化**：Room 2.6.1（**v6**；V1.1.6 删了 `song_list`/`list_item` 两张死表）+ DataStore Preferences（30 KEY）
 - **构建**：Gradle 8.7 + AGP 8.5.2 + Kotlin 2.0.20，Groovy DSL
 - **minSdk 24 / targetSdk 34 / compileSdk 34**
 - **包名**：`com.lxmusic.android`（debug 变体加后缀 `.debug`）
@@ -43,24 +47,43 @@
 
 | 组件 | 位置 | 备注 |
 |---|---|---|
-| JDK 21 | `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` | **AGP 8.5 不兼容 JDK 25**（系统默认只有 25），必须显式指定这个。旧文档里的 `D:\demo\tools\jdk17\...` **已不存在** |
-| Android SDK | `D:\demo\android-sdk` | 只有 `platforms/android-34` + `build-tools/34.0.0` + `platform-tools` |
+| JDK 21 | `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` | **AGP 8.5 不兼容 JDK 25**（系统默认只有 25），必须显式指定这个 |
+| Android SDK | `D:\demo\02_开发工具链\android-sdk` | `platforms/android-34`+`36`、`build-tools/34.0.0`+`35`+`36`、`platform-tools`。`D:\demo\toolchains\android-sdk` 是同一处的符号链接 |
 | Gradle | wrapper 自动下载 | `gradle/wrapper/gradle-wrapper.properties` 指向**华为云镜像**，官方 CDN 极慢 |
 
-`local.properties` 已写死 `sdk.dir=D:\\demo\\android-sdk`。
+**V1.1.6 起路径与临时目录是两个非显然的坑**，都已经在仓库里绕过：
 
-### 标准构建命令（PowerShell）
+1. 项目现在位于 `D:\demo\01_项目代码\lxmusic-android`，路径含中文。AGP 8.5.2 会直接拒绝
+   （`Your project path contains non-ASCII characters`），所以 `gradle.properties` 里有一行
+   **`android.overridePathCheck=true`**。这不是编码问题，是 AGP 的路径检查。
+2. 中文路径下 Kotlin 编译守护进程会崩：`java.nio.file.AccessDeniedException: ...\kotlin-daemon-client-<n>.tmp`
+   + `Daemon compilation failed: Could not connect to Kotlin compile daemon`，之后所有源文件都
+   报「找不到」（非 ASCII 被转义成 `\uXXXX` 字面量）。**唯一的解是
+   `-Pkotlin.compiler.execution.strategy=in-process`**，把编译器放进 Gradle 进程里跑。
+   改 `org.gradle.jvmargs` 的 `java.io.tmpdir` 无效，改 `TEMP/TMP` 也无效。
+3. 本机用 `subst X: "D:\demo\01_项目代码"` 把项目盘映射成 ASCII 盘符，`X:\lxmusic-android`
+   就是干净路径。`subst` 在重启后失效，需要时重新执行（脚本里是 python 写 GBK 的 .bat 再
+   `cmd /c`，否则 .bat 里的中文会乱码）。
 
-```powershell
-cd D:\demo\lxmusic-android
-$env:JAVA_HOME="C:\Program Files (x86)\Android\openjdk\jdk-21.0.8"
-$env:ANDROID_SDK_ROOT="D:\demo\android-sdk"
-.\gradlew.bat :app:assembleDebug :app:versionedApk :app:testDebugUnitTest --no-daemon --console=plain
+### 标准构建命令（bash，仓库外的 `D:\demo\_bx.sh`）
+
+```bash
+cd /x/lxmusic-android || exit 1
+export JAVA_HOME="/c/Program Files (x86)/Android/openjdk/jdk-21.0.8"
+export ANDROID_SDK_ROOT="D:/demo/02_开发工具链/android-sdk"
+export ANDROID_HOME="D:/demo/02_开发工具链/android-sdk"
+export TEMP="D:/demo/_ktmp"; export TMP="D:/demo/_ktmp"
+./gradlew.bat "$@" -Pkotlin.compiler.execution.strategy=in-process --no-daemon --console=plain
 ```
 
+调用：`bash /d/demo/_bx.sh :app:compileDebugKotlin` / `bash /d/demo/_bx.sh :app:testDebugUnitTest`。
+
 - `:app:assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`
-- `:app:versionedApk` → `build/apk/jijian-music-<版本>-vc<号>-debug.apk`（**给用户的就是这个**，见第六节）
-- `:app:testDebugUnitTest` → 237 项单元测试
+- `:app:versionedApk` → `build/apk/jijian-music-<版本>-vc<号>.apk`（**给用户的就是这个**，见第六节）
+- `:app:versionedDebugApk` → 同目录的 `-debug` 变体
+- `:app:testDebugUnitTest` → 273 项单元测试；统计用 python 解析
+  `app/build/test-results/testDebugUnitTest/*.xml` 的 `tests=` / `failures=` / `errors=` 属性
+  （不要用 PowerShell 的 `[xml]`，会把中文测试名弄乱）
 
 ### 这台机器上没有的东西（重要）
 
@@ -149,7 +172,9 @@ Android 端曾经把这两块都用 headless WebView 复刻出来（两个 WebVi
 | `data/repo/MusicRepository.kt` | 所有 DAO 的门面；`logPlay` / `playRecords` 是统计功能的数据源 |
 | `data/settings/SettingsStore.kt` | DataStore；`AppSettings` 是**唯一设置真相**，30 个 KEY 常量（含 `record_stats`、6 个 `eq_*`、`last_update_check_at`、V1.1.4 的 `auto_check_updates`、V1.1.5 的 `pending_deletes`；V1.1.4 删掉了 `update_token`） |
 | `data/settings/EqProfile.kt` | 用户音调曲线的可持久化快照：enabled/preset/bands/bass/virtualizer/loudness；`encodeBands`/`decodeBands` 坏数据丢弃不抛 |
-| `data/stats/PlayStats.kt` | 播放统计纯逻辑：日/周/全部三档、直方图分桶、排行 |
+| `data/stats/PlayStats.kt` | 播放统计纯逻辑：日/周/全部三档、直方图分桶、排行；V1.1.6 加 `yearStart`/`currentYear`/`annualReport` |
+| `data/backup/BackupCodec.kt`（V1.1.6） | **纯 JVM、可单测**：`BackupFile`（JSON 形状）、`TrackMatcher`（指纹匹配）、`BackupArchive`（zip 容器读写） |
+| `data/backup/BackupRepository.kt`（V1.1.6） | 导出/导入的实际 DB 操作：`export(appVersion)` 收齐五张表，`import(file, localTracks)` 合并 |
 
 ### 本地音乐
 
@@ -176,8 +201,14 @@ Android 端曾经把这两块都用 headless WebView 复刻出来（两个 WebVi
 |---|---|
 | `ui/LxApp.kt` | V1.1.3 起只做壳的接线（200 行）；全屏页由 `ui/shell/LxShell.kt` 的 `CurtainSpec` 接管，不再 early-return |
 | `ui/HomeChrome.kt` | V1.1.3：顶栏、更新公告条、迷你播放条、舞台正文（`StageContent`） |
-| `ui/shell/LxShell.kt` | V1.1.3：舞台四槽位 `backdrop`/`tabs`/`dock`/`spotlight` + 幕布栈 |
-| `ui/MainViewModel.kt`（30 KB） | 唯一的 ViewModel，所有 UI 状态与动作 |
+| `ui/shell/LxShell.kt` | V1.1.3：舞台四槽位 `backdrop`/`tabs`/`dock`/`spotlight` + 幕布栈。V1.1.6 起 `visible` 由 `RouteStack` 决定，但**绘制顺序仍是 `LxApp` 里写死的那串**，所以层级可预测 |
+| `ui/MainViewModel.kt`（508 行） | **V1.1.6 起是门面**：把 `MediaLibraryStore`/`PlayerUiStore`/`StatsStore`/`UpdateStore`/`BackupStore` 的 Flow 与方法转发出去。改状态逻辑要去 `ui/state/`，不要往这里加逻辑 |
+| `ui/state/MediaLibraryStore.kt`（V1.1.6） | 扫描、缓存合并、分组、收藏、歌单、删除记账（`reconcilePendingDeletes` 等）。`groupByKey(key, kind)` **按 key 重算**，详情页必须走它 |
+| `ui/state/PlayerUiStore.kt`（V1.1.6） | 包住 `PlayerController`；传输控制、队列操作、均衡器持久化（400ms 防抖） |
+| `ui/state/StatsStore.kt` / `UpdateStore.kt` / `BackupStore.kt`（V1.1.6） | 统计窗口 + 年度；更新检查 + 24h 节流；备份导出导入 |
+| `ui/StateAliases.kt`（V1.1.6） | `typealias` 把 `ui.state` 的状态类回接到 `ui` 包，屏幕与组件不用改 import |
+| `ui/screens/GroupDetailScreen.kt`（V1.1.6） | 专辑/歌手详情：大封面 + 曲目表 + 播放全部/随机播放。`GroupDetailHost` 在幕布 260ms 退场期间保留最后一页，避免白屏 |
+| `ui/shell/Route.kt`（V1.1.6） | `sealed interface Route`（含 `Group(key)`）+ `RouteStack`（`StateFlow<List<Route>>`）+ `topGroupRoute`/`isGroupOpen`/`routeGroupId` 三个 helper |
 | `ui/screens/NowPlayingScreen.kt` | 播放页（霓虹舞台）；`PlayerSkin.VINYL`（唱片）/ `LYRICS`（全屏歌词）两种皮肤 |
 | `ui/screens/StatsScreen.kt` | 播放统计页（玻璃卡片 + 渐变直方图） |
 | `ui/screens/QueueScreen.kt` | 播放队列（自定义顶栏、当前行发光、进页自动定位） |
@@ -481,11 +512,13 @@ V1.0 的修法只补了一半。
 
 ## 十、测试
 
-**229 项 / 26 个测试类 / 0 失败**（V1.1.4 实测；比 V1.0.3 少 5 项，减法见下）。全部是 JVM 单元测试（`app/src/test/java/`），
+**273 项 / 29 个测试类 / 0 失败**（V1.1.6 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
 **不需要设备**。
 
 > **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类；V1.1.1/1.1.2 → 235 项 / 26 类；V1.1.3 → 230 项 / 26 类；V1.1.4 → 229 项 / 26 类（删访问令牌 2 项、加自动检查 1 项）**（`PlayHistoryTest` 9 项随
 > `PlayHistory.kt` 删除，新增 `QueueMirrorTest` 17 项，四个 shuffle 测试类按抽签语义重写）。
+> **V1.1.5 → 237 项 / 26 类；V1.1.6 → 273 项 / 29 类**（新增 `BackupCodecTest` 15、`RouteStackTest` 11、
+> `AnnualReportTest` 10；`SettingsRoundTripTest` 11 → 10）。
 > V1.0 之前的基线（144/17 → 214/25）见 `git log`。
 
 | 测试类 | 项数 | 覆盖 |
@@ -516,6 +549,9 @@ V1.0 的修法只补了一半。
 | `LocalTrackMapperTest` | 4 | 曲目映射 |
 | `PlayerSkinTest` | 4 | 皮肤解析与未知值回落 |
 | `RecordPolicyTest` | 3 | `recordHistory` 与 `recordStats` 互相独立 |
+| `BackupCodecTest`（V1.1.6） | 15 | 指纹忽略大小写/空白/秒内抖动、精确 id 优先、重复指纹取首条、`report` 三分（精确/指纹/缺失）、JSON 往返、未来版本与垃圾数据被拒、zip **和**裸 JSON 都能读 |
+| `RouteStackTest`（V1.1.6） | 11 | 重复打开是 no-op、两个不同 key 的分组页共存、`close` 可乱序、`closeTop` 按绘制顺序而非打开顺序、分组类型由 `album:`/`artist:` 前缀推出 |
+| `AnnualReportTest`（V1.1.6） | 10 | 年度窗口**两端闭合**（恢复带进来的未来事件不能漏进今年）、时长按次数累加、空歌手归并成「未知歌手」、歌手/单曲并列时的取舍、空年份返回对象而不是抛异常 |
 
 **跑单个测试类**：
 
@@ -529,8 +565,10 @@ V1.0 的修法只补了一半。
 `_probe_stall.ps1` 是「位置冻住」的长播探针，需要模拟器在线）：
 
 ```powershell
-& python _cnt.py     # files=26 tests=229 failures=0 errors=0
+& python _cnt.py     # files=29 tests=273 failures=0 errors=0
 ```
+
+V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路径。
 
 ---
 
@@ -543,53 +581,138 @@ V1.0 的修法只补了一半。
 里面是旧的 `ShuffleBag.kt` / `ShuffleBagTest.kt`，**没有 `RandomShuffle` 的历史版本**。
 
 项目根**没有** `UPDATE_PLAN.md`（早期版本的控制台报告里提过这个文件名，实际从未入库）。
-版本历史的权威记录是 `README.md` 的版本章节：当前版本在最前面的 `V1.1.0` 一节，
+版本历史的权威记录是 `README.md` 的版本章节：当前版本在最前面的 `V1.1.6` 一节，
 往下是时间线留档（早于 V1.0.3 的章节只用于追溯，不代表当前行为）。
+逐版本的更新公告在 `docs/release-notes/`（`1.1.2` → `1.1.6`）。
 
 领域词表是 `GLOSSARY.md`（队列 / 镜像 playlist / 抽签 Draw / Next / Previous / 循环 /
 静默停顿 / 偏好 / 均衡器曲线 / 效果状态）。
 
-`docs/` 下三份是**早期**设计留档：`docs/adr/0001-shuffle-cycle-and-play-history.md`
+`docs/archive/` 下三份是**早期**设计留档：`0001-shuffle-cycle-and-play-history.md`
 （ADR：为什么当时选 cycle，**结论已被 V1.0.1 推翻**）、
-`docs/adr/0002-detect-silent-stalls.md`（ADR：静默停顿检测，仍然有效）、
-`docs/v6.1-refactor-plan.md`（施工单 + 验收记录，历史）。
+`0002-detect-silent-stalls.md`（ADR：静默停顿检测，仍然有效）、
+`v6.1-refactor-plan.md`（施工单 + 验收记录，历史）。V1.1.6 删掉了空目录 `docs/adr/`。
 
 ---
 
 ## 十二、接手检查清单
 
-- [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\android-sdk` 存在
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 229 测试 0 失败
+- [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\02_开发工具链\android-sdk` 存在
+- [ ] 确认 `subst X: "D:\demo\01_项目代码"` 已生效（否则 Kotlin 编译守护进程会崩，见第二节）
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 273 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.5-vc10.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.6-vc11.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---
 
 ## 十三、常用命令速查
 
-```powershell
-# 构建 + 出包 + 测试
-cd D:\demo\lxmusic-android
-$env:JAVA_HOME="C:\Program Files (x86)\Android\openjdk\jdk-21.0.8"; $env:ANDROID_SDK_ROOT="D:\demo\android-sdk"
-.\gradlew.bat :app:assembleDebug :app:versionedApk :app:testDebugUnitTest --no-daemon --console=plain
+```bash
+# 构建 + 出包 + 测试（脚本在仓库外，见第二节）
+bash /d/demo/_bx.sh :app:assembleDebug :app:versionedApk :app:testDebugUnitTest
 
-# 看 APK 版本
-D:\demo\android-sdk\build-tools\34.0.0\aapt2.exe dump badging build\apk\jijian-music-1.1.2-vc7.apk | Select-String versionCode
+# 看 APK 版本（别只看字节数：1.1.3/1.1.4/1.1.5 的 release 包都恰好是 16,098,025 B）
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.1.6-vc11.apk | grep versionCode
 
 # 验签
-D:\demo\android-sdk\build-tools\34.0.0\apksigner.bat verify --print-certs build\apk\jijian-music-1.1.2-vc7.apk
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.1.6-vc11.apk
 
 # 重新生成搜索 bundle
 cd D:\demo\lx-builder; node build.mjs
 
 # 设备（本机已装无头模拟器；无真机）
-D:\demo\android-sdk\platform-tools\adb.exe devices -l
-D:\demo\android-sdk\platform-tools\adb.exe install -r <apk>
-D:\demo\android-sdk\platform-tools\adb.exe shell run-as com.lxmusic.android.debug cat files/last_crash.txt
+D:\demo\02_开发工具链\android-sdk\platform-tools\adb.exe devices -l
+D:\demo\02_开发工具链\android-sdk\platform-tools\adb.exe install -r <apk>
+D:\demo\02_开发工具链\android-sdk\platform-tools\adb.exe shell run-as com.lxmusic.android.debug cat files/last_crash.txt
 ```
+
+---
+
+## 十四、V1.1.6 设计与架构记录
+
+这一版没有 bug 要修，全是产品与结构决定，所以每个决定都写了理由。
+
+### 1. 分组改成一页（`ui/screens/GroupDetailScreen.kt`）
+
+**问题**：`LocalScreen` 里一张专辑是一行 `GroupRow`，点一下从第一首播到底。分组数据
+（`MusicGroup.coverUrl` / `count` / `totalDuration`）早就齐了，没有任何页面用它。
+
+**决定**：点分组进详情页，播整组降级成页内的「播放全部」按钮。
+
+**关键约束**：详情页持有的是 **group key 字符串**，不是 `MusicGroup`。`recomputeLocal()`
+在每次搜索输入时重建所有分组，捕获对象会在用户敲字后立刻过期。取值走
+`MediaLibraryStore.groupByKey(key, kind)`，它从 `allTracks` 现算。
+
+**退场处理**：`GroupDetailHost` 用 `var last by remember { mutableStateOf<Route.Group?>(null) }`
+记住最后一页，幕布 260ms 退场期间不白屏；`resolved == null` 的关闭放在
+`LaunchedEffect` 里，**不能在组合期调 `onBack()`**（会崩）。
+
+### 2. 幕布栈（`ui/shell/Route.kt`）
+
+`showSettings` / `showFolderManager` / `showStats` 曾在 ViewModel，`showQueue` /
+`showEqualizer` / `showNowPlaying` 曾在 `LxApp`，一共六个布尔值。分组页是第一个需要
+参数的页面（「打开 key 是 X 的那组」不是一个布尔值能表达的），于是整体换成
+`sealed interface Route` + `RouteStack`。
+
+**保留的约束**：`LxShell` 仍然按 `LxApp` 里写死的顺序绘制所有幕布，只问「这条路是不是开着」。
+所以**层级**稳定（设置永远压在队列上面），与打开顺序无关；返回键关的是
+`closeTop(order)` 命中的那块**看得见的**最上层，不是最后打开的那个。
+
+**明确没做的事**：不上 `navigation-compose`。它虽然一直躺在 `libs.versions.toml` 里，
+但零 `NavHost`——已删。真要上也会和舞台模型打架：`LxShell` 是「所有幕布同时在场、让可见的那块
+升起」，`NavHost` 是「同一时刻只渲染一个 destination」，退场动画天然冲突。
+
+### 3. 五个 store（`ui/state/`）
+
+`MainViewModel` 887 → **508 行**，从「唯一的 ViewModel」降级为门面。拆分动机不是行数，
+是它同时握着扫描、播放、音乐库、统计、更新、删文件六个不相干的关注点，并且直接去
+`LxApp.instance.settingsStore` 拿依赖（不是注入的）。
+
+| store | 职责 | 备注 |
+|---|---|---|
+| `MediaLibraryStore` | 扫描、缓存合并、分组、收藏、歌单、删除记账 | `groupByKey` / `trackById` 是给详情页用的查询口 |
+| `PlayerUiStore` | 包住 `PlayerController`、队列、均衡器持久化 | `release()` 在 `onCleared()` 调 |
+| `StatsStore` | 三档窗口 + 年度报告 | 年度单独一条 Flow，免得切档时闪 |
+| `UpdateStore` | GitHub release 检查 + 24h 节流 | 构造参数 `checker: () -> UpdateChecker` 便于测试 |
+| `BackupStore` | 导出/导入（`content://` uri + IO 线程） | 导完要 `libraryStore.refreshLibrary()` |
+
+`ui/StateAliases.kt` 把状态类 `typealias` 回 `ui` 包——**七个屏幕的 import 一行都没改**。
+这是刻意的：重构的验收标准是「外部零波及」。
+
+### 4. 备份格式（`data/backup/`）
+
+`.jjmbackup` = 一个 zip，唯一 entry 是 `backup.json`。用 zip 而不是裸 JSON，是为了以后
+能加封面而不破坏格式；`BackupArchive.read` 也接受裸 JSON（用户改名/手改过也能恢复）。
+
+**必须用指纹而不是 id**：id 是 `content://` URI（MediaStore）或 SAF document URI，
+换机必变。回退身份 = 标题 + 歌手 + 专辑 + 时长，时长**按秒取整**（`(ms + 500) / 1000`）——
+同一首歌两次抓轨常差几毫秒，严格比较会当成两首。
+
+**恢复是合并**：收藏/歌单/历史/事件全部 add，不删现有数据；同名歌单复用并接在
+`maxPosition` 之后。
+
+**不导出的设置**（每条都有理由）：扫描目录（SAF 授权跨设备失效）、`pendingDeletes`
+（那是另一台设备的删除意图）、`lastPlayedId`/`lastPlayedPosMs`（可能指向不存在的文件）、
+`lastUpdateCheckAt`（节流无意义）。导出的是 16 项「口味」类设置。
+
+### 5. 年度回顾（`PlayStats.annualReport`）
+
+纯函数，和其余统计一样固定时钟与时区。**踩到一个真 bug**：原本只过滤
+`playedAt >= yearStart`，于是恢复备份带进来的「未来时间戳」事件会算进今年。
+已改成两端闭合 `[yearStart, yearStart(y+1))`，`AnnualReportTest.eventsFromOtherYearsAreIgnored` 钉住。
+
+UI 上没有入口按钮：一年是一个关于用户的事实，不是需要点开的功能；没数据时不渲染。
+
+### 6. 死代码清理
+
+- Room **v5 → v6**：`song_list` + `list_item` + `SongListDao`（在线音源时代遗留，全仓零调用），
+  `MIGRATION_5_6` 两条 `DROP TABLE IF EXISTS`。
+- `MusicInfo.qualitys` + `QualityInfo`：零引用。**不需要迁移**——曲目在库里是
+  `musicJson` 字符串，Gson 忽略多余键。
+- `navigation-compose` 依赖、空目录 `docs/adr/`。
 
 ---
 

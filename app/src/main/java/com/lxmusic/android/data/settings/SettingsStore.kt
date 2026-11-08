@@ -85,12 +85,6 @@ data class AppSettings(
     /** V1.1.4: 进入应用时自动检查更新。关掉之后只有设置页按钮会发起检查。 */
     val autoCheckUpdates: Boolean = true,
 
-    /**
-     * V1.1.5: 已经发出系统删除确认、但还没落地的曲目 id。
-     *
-     * MediaStore 的删除要走系统弹窗，用户点确认之前进程可能被杀——那时文件
-     * 已经删了而数据库行还在。存下来，下次启动按「文件还在不在」对账。
-     */
     val pendingDeletes: Set<String> = emptySet(),
 
     /** V1.1.0: 卡死看门狗阈值（毫秒）。默认值即 V6.1 调好的 8s/20s。 */
@@ -187,7 +181,6 @@ class SettingsStore private constructor(context: Context) {
     /** V1.1.4: 进应用时自动检查更新。 */
     fun setAutoCheckUpdates(on: Boolean) = edit { it[KEY_AUTO_CHECK_UPDATES] = on }
 
-    /** V1.1.5: 待对账的删除（见 [AppSettings.pendingDeletes]）。 */
     fun setPendingDeletes(ids: Set<String>) = edit { it[KEY_PENDING_DELETES] = ids }
 
     /** V1.1.0: 卡死看门狗阈值。 */

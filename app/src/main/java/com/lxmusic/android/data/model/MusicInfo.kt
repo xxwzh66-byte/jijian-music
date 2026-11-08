@@ -12,8 +12,6 @@ data class MusicInfo(
     val interval: String = "00:00",
     val intervalSeconds: Int = 0,
     val img: String? = null,
-    /** Available qualities with optional size/hash metadata, keyed by quality id. */
-    val qualitys: Map<String, QualityInfo> = emptyMap(),
     /** Extra platform fields (hash, albumAudioId, etc.) needed when requesting URLs. */
     val extra: Map<String, String> = emptyMap(),
     /** Local file path (set only when [isLocal]). */
@@ -38,28 +36,3 @@ data class MusicInfo(
         const val SOURCE_LOCAL = "local"
     }
 }
-
-data class QualityInfo(
-    val type: String,
-    val size: String? = null,
-    val hash: String? = null,
-)
-
-/** A playable playlist. */
-data class SongList(
-    val id: Long = 0,
-    val name: String,
-    val source: String = "local",
-    val coverUrl: String? = null,
-    val description: String = "",
-    val createdAt: Long = System.currentTimeMillis(),
-)
-
-/** Junction row: which music is in which list, plus ordering. */
-data class ListItem(
-    val id: Long = 0,
-    val listId: Long,
-    val musicId: String,
-    val musicJson: String,
-    val position: Int,
-)

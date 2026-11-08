@@ -11,16 +11,6 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.room.RoomDatabase
 
-@Entity(tableName = "song_list")
-data class SongListEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val name: String,
-    val source: String,
-    val coverUrl: String?,
-    val description: String,
-    val createdAt: Long,
-)
-
 /** A user-created playlist. */
 @Entity(tableName = "playlist")
 data class PlaylistEntity(
@@ -72,14 +62,6 @@ data class PlayEventEntity(
     val playedAt: Long = System.currentTimeMillis(),
 )
 
-@Entity(tableName = "list_item", primaryKeys = ["listId", "musicId"])
-data class ListItemEntity(
-    val listId: Long,
-    val musicId: String,
-    val musicJson: String,
-    val position: Int,
-)
-
 /** A cached local track discovered by the SAF / manual scanners (C2). */
 @Entity(tableName = "local_track")
 data class LocalTrackEntity(
@@ -97,30 +79,6 @@ data class LocalTrackEntity(
     val origin: String,
     val dateAdded: Long,
 )
-
-@Dao
-interface SongListDao {
-    @Query("SELECT * FROM song_list ORDER BY createdAt ASC")
-    suspend fun all(): List<SongListEntity>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(list: SongListEntity): Long
-
-    @Query("DELETE FROM song_list WHERE id = :id")
-    suspend fun deleteList(id: Long)
-
-    @Query("SELECT * FROM list_item WHERE listId = :listId ORDER BY position ASC")
-    suspend fun items(listId: Long): List<ListItemEntity>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertItem(item: ListItemEntity)
-
-    @Query("DELETE FROM list_item WHERE listId = :listId AND musicId = :musicId")
-    suspend fun deleteItem(listId: Long, musicId: String)
-
-    @Query("SELECT MAX(position) FROM list_item WHERE listId = :listId")
-    suspend fun maxPosition(listId: Long): Int?
-}
 
 @Dao
 interface PlaylistDao {
@@ -231,17 +189,15 @@ interface LocalTrackDao {
 
 @Database(
     entities = [
-        SongListEntity::class, ListItemEntity::class,
         PlaylistEntity::class, PlaylistTrackEntity::class,
         FavoriteEntity::class, PlayHistoryEntity::class,
         LocalTrackEntity::class,
         PlayEventEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
-    abstract fun songListDao(): SongListDao
     abstract fun playlistDao(): PlaylistDao
     abstract fun favoriteDao(): FavoriteDao
     abstract fun historyDao(): HistoryDao
@@ -297,13 +253,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** v5 -> v6: drops the song_list / list_item tables - the online-source stack is gone (V1.1.6). */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `list_item`")
+                db.execSQL("DROP TABLE IF EXISTS `song_list`")
+            }
+        }
+
         @Volatile private var INSTANCE: AppDatabase? = null
         fun get(context: android.content.Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: androidx.room.Room.databaseBuilder(
                     context.applicationContext, AppDatabase::class.java, "lxmusic.db"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .fallbackToDestructiveMigration()
                     .build().also { INSTANCE = it }
             }

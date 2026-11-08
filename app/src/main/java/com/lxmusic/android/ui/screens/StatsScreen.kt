@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lxmusic.android.data.stats.AnnualReport
 import com.lxmusic.android.data.stats.PlayStats
 import com.lxmusic.android.data.stats.StatsBucket
 import com.lxmusic.android.data.stats.StatsRange
@@ -62,6 +63,7 @@ import com.lxmusic.android.ui.theme.OledTokens
 @Composable
 fun StatsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     val state by viewModel.stats.collectAsState()
+    val annual by viewModel.annual.collectAsState()
     val context = LocalContext.current
     var confirmClear by remember { mutableStateOf(false) }
 
@@ -80,6 +82,10 @@ fun StatsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             RangePicker(current = state.range, onPick = { viewModel.setStatsRange(it) })
 
             SummaryCard(plays = state.totalPlays, range = state.range)
+
+            // The year card sits above the chart: it is the slow-moving fact,
+            // the chart is the one that changes with the range chips.
+            annual?.takeIf { !it.isEmpty }?.let { YearCard(it) }
 
             Histogram(buckets = state.buckets, range = state.range)
 
@@ -296,5 +302,65 @@ private fun Centered(text: String) {
         Text(text, style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 3, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/**
+ * 「这一年」— the annual wrap-up.
+ *
+ * Deliberately not a separate screen with an entry button: a year is a fact
+ * about you, not a feature to open. It only appears once there is a year worth
+ * summarising, and it says four things and stops — plays, hours, the artist,
+ * the one track you kept coming back to.
+ */
+@Composable
+private fun YearCard(report: AnnualReport) {
+    Column(
+        Modifier.fillMaxWidth()
+            .padding(horizontal = OledTokens.screenMargin, vertical = OledTokens.spaceXs)
+            .neonGlass(shape = RoundedCornerShape(OledTokens.radiusMd))
+            .padding(OledTokens.spaceMd),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                report.year.toString(),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.width(OledTokens.spaceXs))
+            Text(
+                "这一年",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(OledTokens.spaceSm))
+        Text(
+            report.plays.toString() + " 次播放 · " + report.durationText +
+                " · " + report.distinctTracks.toString() + " 首歌",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        report.topArtist?.let { artist ->
+            Spacer(Modifier.height(OledTokens.spaceXs))
+            Text(
+                "听得最多的是 " + artist + "（" + report.topArtistPlays + " 次）",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        report.topTrack?.let { track ->
+            Spacer(Modifier.height(OledTokens.spaceXs))
+            Text(
+                "单曲循环 " + track.name + " × " + report.topTrackPlays,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

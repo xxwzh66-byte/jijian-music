@@ -32,14 +32,6 @@ object LocalFileDeleter {
 
     private const val TAG = "LocalFileDeleter"
 
-    /**
-     * V1.1.5: drop the cached cover JPEG belonging to [music].
-     *
-     * The SAF scanner writes `cacheDir/covers/<id>.jpg` once and never removes
-     * it, so every deleted track left its artwork behind for the life of the
-     * install. Only files this app owns are touched - a `content://` art URI
-     * belongs to the media provider.
-     */
     fun dropCachedCover(context: Context, music: MusicInfo) {
         val path = music.img ?: return
         if (!path.startsWith(context.cacheDir.absolutePath)) return

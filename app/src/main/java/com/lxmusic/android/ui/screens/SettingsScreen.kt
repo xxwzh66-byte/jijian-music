@@ -29,6 +29,9 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -53,6 +56,8 @@ import com.lxmusic.android.ui.neon.NeonScreen
 import com.lxmusic.android.ui.neon.NeonTokens
 import com.lxmusic.android.ui.theme.AppPalettes
 import com.lxmusic.android.ui.components.toast
+import com.lxmusic.android.ui.state.BackupStatus
+import com.lxmusic.android.ui.state.BackupUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,6 +65,20 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     val s by viewModel.settings.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     var showClearDialog by remember { mutableStateOf(false) }
+
+    // ---------------- backup (V1.1.6) ----------------
+    val backup by viewModel.backup.collectAsState()
+    // 导出用 CreateDocument：系统让用户挑位置和文件名，app 不去猜相册还是下载。
+    // MIME 写成 application/octet-stream —— zip 容器没有公认的 audio/media 类型，
+    // 用 "application/zip" 会让部分文件管理器把它归到压缩包、改名时连带改后缀。
+    val exportPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri: Uri? -> if (uri != null) viewModel.exportBackup(uri) }
+    // 导入用 OpenDocument 并限定 octet-stream + zip：不限定的话用户能选任何文件，
+    // 选错就只能在解析阶段报「不是有效的备份文件」。
+    val importPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? -> if (uri != null) viewModel.importBackup(uri) }
 
     // ---------------- update (V1.0.2) ----------------
     val up by viewModel.updateCheck.collectAsState()
@@ -223,6 +242,31 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                         subtitle = null,
                         checked = s.readEmbeddedCover,
                         onCheckedChange = viewModel::setReadEmbeddedCover,
+                    )
+                }
+            }
+
+            // ---------------- backup ----------------
+            item { SectionHeader("备份", expanded = isExpanded("备份")) { toggle("备份") } }
+            if (isExpanded("备份")) {
+                item {
+                    InfoRow(
+                        title = "导出备份",
+                        subtitle = backupSubtitle(backup),
+                        onClick = {
+                            viewModel.acknowledgeBackup()
+                            exportPicker.launch(backupFileName())
+                        },
+                    )
+                }
+                item {
+                    InfoRow(
+                        title = "从备份恢复",
+                        subtitle = "合并收藏、歌单、播放记录与偏好设置，不会删除现有数据",
+                        onClick = {
+                            viewModel.acknowledgeBackup()
+                            importPicker.launch(arrayOf("application/octet-stream", "application/zip"))
+                        },
                     )
                 }
             }
@@ -490,4 +534,20 @@ private fun InfoRow(title: String, subtitle: String?, danger: Boolean = false, o
             )
         }
     }
+}
+
+/** Stable-ish file name: the date is what a user can tell apart in a picker. */
+private fun backupFileName(): String {
+    val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.US)
+        .format(java.util.Date())
+    return "jijian-music-$stamp.jjmbackup"
+}
+
+/** Status line under the export row. */
+private fun backupSubtitle(state: BackupUiState): String = when (state.status) {
+    BackupStatus.IDLE -> "导出收藏、歌单、播放记录与偏好，存成一个 .jjmbackup 文件"
+    BackupStatus.EXPORTING -> "正在导出……"
+    BackupStatus.IMPORTING -> "正在恢复……"
+    BackupStatus.DONE -> state.message ?: "完成"
+    BackupStatus.FAILED -> state.message ?: "失败"
 }

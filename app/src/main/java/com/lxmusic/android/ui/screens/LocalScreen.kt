@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -169,7 +171,10 @@ fun LocalScreen(viewModel: MainViewModel, onLongPress: (MusicInfo) -> Unit) {
                 } else {
                     LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
                         items(state.groups, key = { it.key }) { group ->
-                            GroupRow(group) { viewModel.playGroup(group) }
+                            // V1.1.6: 点击进专辑/歌手页，播放整组挪到页面里的
+                            // 「播放全部」。分组行以前是「点一下就播」，等于把
+                            // 唱片架当成了文件夹。
+                            GroupRow(group) { viewModel.openGroup(group) }
                             NeonHairline()
                         }
                     }
@@ -259,6 +264,12 @@ private fun GroupRow(group: MusicGroup, onClick: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 @Composable

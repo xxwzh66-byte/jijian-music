@@ -24,6 +24,40 @@ data class PlayTally(val music: MusicInfo, val count: Int, val lastPlayedAt: Lon
 data class StatsBucket(val label: String, val count: Int)
 
 /**
+ * One year of listening, collapsed into the handful of facts worth showing
+ * once a year. Every field is derived from [PlayRecord]s, so the report is a
+ * pure function of the event table and needs no extra storage.
+ */
+data class AnnualReport(
+    val year: Int,
+    /** How many plays fell inside [year]. */
+    val plays: Int,
+    /** Sum of the played tracks' durations, in seconds. */
+    val seconds: Long,
+    /** Distinct tracks played. */
+    val distinctTracks: Int,
+    /** Most-played artist, or null for an empty year. */
+    val topArtist: String?,
+    val topArtistPlays: Int,
+    /** Most-played single track, or null for an empty year. */
+    val topTrack: MusicInfo?,
+    val topTrackPlays: Int,
+    /** Latest wall-clock time anything was played, or 0 for an empty year. */
+    val latestPlayAt: Long,
+) {
+    val isEmpty: Boolean get() = plays == 0
+
+    /** "12 小时 34 分" — hours appear only when the year is long enough. */
+    val durationText: String
+        get() {
+            if (seconds <= 0) return "0 分钟"
+            val h = seconds / 3600
+            val m = (seconds % 3600) / 60
+            return if (h > 0) "$h 小时 $m 分" else "$m 分钟"
+        }
+}
+
+/**
  * Pure aggregation for the play-count statistics. Nothing here touches Android
  * or the database, so the whole thing is unit-testable against a fixed clock.
  *
@@ -177,6 +211,60 @@ object PlayStats {
                 counts[i],
             )
         }
+    }
+
+    /** The calendar year [now] falls in, in [tz]. */
+    fun currentYear(now: Long = System.currentTimeMillis(), tz: TimeZone = TimeZone.getDefault()): Int {
+        val c = Calendar.getInstance(tz)
+        c.timeInMillis = now
+        return c.get(Calendar.YEAR)
+    }
+
+    /** Midnight on 1 January of [year], in [tz]. */
+    fun yearStart(year: Int, tz: TimeZone = TimeZone.getDefault()): Long {
+        val c = Calendar.getInstance(tz)
+        c.clear()
+        c.set(year, Calendar.JANUARY, 1, 0, 0, 0)
+        return c.timeInMillis
+    }
+
+    /**
+     * Collapses a year of [records] into an [AnnualReport].
+     *
+     * The caller may pass a wider window; anything outside [year] is dropped. (Or
+     * pass everything since [yearStart]); filtering here as well keeps the
+     * function honest when a caller passes a wider window.
+     */
+    fun annualReport(
+        records: List<PlayRecord>,
+        year: Int,
+        tz: TimeZone = TimeZone.getDefault(),
+    ): AnnualReport {
+        val from = yearStart(year, tz)
+        val to = yearStart(year + 1, tz)
+        // Both ends are bounded, not just the start: a restore can bring in
+        // events stamped in the future, and those belong to next year's report.
+        val inYear = records.filter { it.playedAt >= from && it.playedAt < to }
+        if (inYear.isEmpty()) {
+            return AnnualReport(year, 0, 0, 0, null, 0, null, 0, 0)
+        }
+        val byTrack = inYear.groupBy { it.music.id }
+        val topTrackPlays = byTrack.values.maxOf { it.size }
+        val topTrackEntry = byTrack.values.filter { it.size == topTrackPlays }
+            .maxByOrNull { plays -> plays.maxOf { it.playedAt } }!!
+        val byArtist = inYear.groupBy { it.music.singer.ifBlank { "未知歌手" } }
+        val topArtistPlays = byArtist.values.maxOf { it.size }
+        return AnnualReport(
+            year = year,
+            plays = inYear.size,
+            seconds = inYear.sumOf { it.music.intervalSeconds.toLong() },
+            distinctTracks = byTrack.size,
+            topArtist = byArtist.entries.first { it.value.size == topArtistPlays }.key,
+            topArtistPlays = topArtistPlays,
+            topTrack = topTrackEntry.maxByOrNull { it.playedAt }!!.music,
+            topTrackPlays = topTrackPlays,
+            latestPlayAt = inYear.maxOf { it.playedAt },
+        )
     }
 
     private fun midnight(at: Long, tz: TimeZone): Long {
