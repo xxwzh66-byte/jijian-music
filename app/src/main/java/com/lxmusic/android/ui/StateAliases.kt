@@ -12,3 +12,5 @@ typealias LibraryUiState = com.lxmusic.android.ui.state.LibraryUiState
 typealias StatsUiState = com.lxmusic.android.ui.state.StatsUiState
 typealias UpdateCheckState = com.lxmusic.android.ui.state.UpdateCheckState
 typealias UpdateStatus = com.lxmusic.android.ui.state.UpdateStatus
+typealias UpdateInstallState = com.lxmusic.android.ui.state.UpdateInstallState
+typealias InstallStatus = com.lxmusic.android.ui.state.InstallStatus

@@ -97,7 +97,6 @@ fun TrackActionsSheet(
                 ActionRow(
                     icon = { Icon(Icons.Default.LibraryMusic, null) },
                     text = "从音乐库移除",
-                    subtitle = "仅移出列表，不删除文件",
                     onClick = { onRemoveFromLibrary(); onDismiss() },
                 )
             }
@@ -106,7 +105,6 @@ fun TrackActionsSheet(
                     icon = { Icon(Icons.Default.DeleteForever, null,
                         tint = MaterialTheme.colorScheme.error) },
                     text = "删除文件",
-                    subtitle = "同时删除设备上的音频文件，不可恢复",
                     textColor = MaterialTheme.colorScheme.error,
                     onClick = { confirmDelete = true },
                 )

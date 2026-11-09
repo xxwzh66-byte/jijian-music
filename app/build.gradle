@@ -46,8 +46,11 @@ plugins {
 // V1.1.6: 分组不再是一行文字。专辑/歌手有自己的页面（曲目表 + 播放全部），
 // 全屏页面从六个布尔值换成 Route 栈，MainViewModel 887 行的上帝对象拆成四个
 // store，加分群备份/恢复与「这一年」年度回顾。包名与签名不变，可从 1.1.5 覆盖安装。
-ext.appVersionCode = 11
-ext.appVersionName = "1.1.6"
+// V1.1.7: 更新不再跳浏览器。检查到新版本后由应用自己把 APK 流式下到缓存、
+// 对 GitHub 公布的 digest 校验通过，再交给系统安装器；设置页那批「同时决定首页
+// 接着听有没有内容」式的说明文字一并删掉。包名与签名不变，可从 1.1.6 覆盖安装。
+ext.appVersionCode = 12
+ext.appVersionName = "1.1.7"
 
 android {
     namespace = "com.lxmusic.android"

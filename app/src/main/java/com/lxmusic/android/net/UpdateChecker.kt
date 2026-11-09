@@ -15,12 +15,16 @@ data class UpdateInfo(
     val title: String,
     /** 更新内容公告正文（release `body`），可能为空串。 */
     val notes: String,
-    /** release 页面地址，「前往下载」按钮跳这里。 */
+    /** release 页面地址。应用内下载失败时给用户一个退路。 */
     val url: String,
     /** 资产里第一个 `.apk` 的文件名；没有 APK 资产时为 null。 */
     val apkName: String?,
     /** 同上资产的字节数，没有则 0。 */
     val apkSize: Long,
+    /** 同上资产的直链，应用内下载用；没有 APK 资产时为 null。 */
+    val apkUrl: String? = null,
+    /** 上面资产的 `digest` 原样（形如 `sha256:...`），GitHub 没给就是 null。 */
+    val apkDigest: String? = null,
 )
 
 /** 更新检查失败的可展示原因（网络不通、404、限流……）。[message] 直接进对话框。 */
@@ -79,27 +83,48 @@ class UpdateChecker(
 
             val tag = str("tag_name")
             val assets = root.get("assets")?.takeIf { it.isJsonArray }?.asJsonArray
-            var apkName: String? = null
-            var apkSize = 0L
+
+            // Every release publishes two APKs, and the debug one is listed
+            // first. It is signed with the debug key, so handing it to the
+            // installer produces a signature clash instead of an upgrade -
+            // pick the release build whenever the release has one.
+            val candidates = ArrayList<ApkAsset>(2)
             assets?.forEach { el ->
-                if (apkName != null) return@forEach
                 val o = el.asJsonObject
-                val name = o.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+                fun field(key: String): String? =
+                    o.get(key)?.takeIf { it.isJsonPrimitive && !it.asJsonPrimitive.isJsonNull }
+                        ?.asString?.takeIf { it.isNotBlank() }
+                val name = field("name") ?: ""
                 if (name.endsWith(".apk", ignoreCase = true)) {
-                    apkName = name
-                    apkSize = o.get("size")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L
+                    candidates += ApkAsset(
+                        name = name,
+                        size = o.get("size")?.takeIf { it.isJsonPrimitive }?.asLong ?: 0L,
+                        url = field("browser_download_url"),
+                        digest = field("digest"),
+                    )
                 }
             }
+            val apk = candidates.firstOrNull { !it.name.contains("debug", ignoreCase = true) }
+                ?: candidates.firstOrNull()
 
             return UpdateInfo(
                 tagName = tag,
                 title = str("name").ifBlank { tag },
                 notes = str("body"),
                 url = str("html_url"),
-                apkName = apkName,
-                apkSize = apkSize,
+                apkName = apk?.name,
+                apkSize = apk?.size ?: 0L,
+                apkUrl = apk?.url,
+                apkDigest = apk?.digest,
             )
         }
+
+        private class ApkAsset(
+            val name: String,
+            val size: Long,
+            val url: String?,
+            val digest: String?,
+        )
 
         /**
          * 版本号比较：`v1.0.2` 与 `1.0.2` 视为同一个；缺位补 0；

@@ -62,26 +62,38 @@
    `-Pkotlin.compiler.execution.strategy=in-process`**，把编译器放进 Gradle 进程里跑。
    改 `org.gradle.jvmargs` 的 `java.io.tmpdir` 无效，改 `TEMP/TMP` 也无效。
 3. 本机用 `subst X: "D:\demo\01_项目代码"` 把项目盘映射成 ASCII 盘符，`X:\lxmusic-android`
-   就是干净路径。`subst` 在重启后失效，需要时重新执行（脚本里是 python 写 GBK 的 .bat 再
-   `cmd /c`，否则 .bat 里的中文会乱码）。
+   就是干净路径。`subst` 在重启后失效，需要时重新执行（脚本是 `D:\demo\_mk_subst2.py`，
+   用 `encoding="gbk"` 写 `.bat` 再 `cmd /c`，否则 .bat 里的中文会被解析成 `D:\demo\x01_...`）。
+   **`mklink /J` 建 junction 不管用**：Gradle 仍会把含中文的真实路径写进 `gradle-worker-classpath*.txt`。
+4. 为什么非要 ASCII 盘符：JVM 的 `sun.jnu.encoding` / `native.encoding` 都是 **GBK**
+   （`chcp 65001` 与 `-Dsun.jnu.encoding=UTF-8` 都改不动，`-Dfile.encoding=UTF-8` 只影响输出），
+   Java 读 UTF-8 的 `@argfile` 时按 GBK 解码，含中文的项目路径全变乱码 → 30 个测试类一起
+   `initializationError: ClassNotFoundException`。实测同一份 argfile 存成 GBK 立刻正常，存成
+   UTF-8 就挂——所以问题在路径编码，不在 classpath 本身。
 
-### 标准构建命令（bash，仓库外的 `D:\demo\_bx.sh`）
+### 标准构建命令（bash，仓库外的 `D:\demo\_bx4.sh`）
 
 ```bash
 cd /x/lxmusic-android || exit 1
 export JAVA_HOME="/c/Program Files (x86)/Android/openjdk/jdk-21.0.8"
 export ANDROID_SDK_ROOT="D:/demo/02_开发工具链/android-sdk"
-export ANDROID_HOME="D:/demo/02_开发工具链/android-sdk"
-export TEMP="D:/demo/_ktmp"; export TMP="D:/demo/_ktmp"
-./gradlew.bat "$@" -Pkotlin.compiler.execution.strategy=in-process --no-daemon --console=plain
+./gradlew.bat "$@" --no-daemon --console=plain \
+  "-Dorg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 -Djava.io.tmpdir=D:\\demo\\_tmp -Dkotlin.daemon.client.alive.path=D:\\demo\\_tmp\\kotlin-client.alive" \
+  -Pkotlin.compiler.execution.strategy=in-process
 ```
 
-调用：`bash /d/demo/_bx.sh :app:compileDebugKotlin` / `bash /d/demo/_bx.sh :app:testDebugUnitTest`。
+调用：`bash /d/demo/_bx4.sh :app:compileDebugKotlin` / `bash /d/demo/_bx4.sh :app:testDebugUnitTest`。
+
+> `_bx.sh` / `_bx2.sh` / `_bx3.sh` 都已作废：前两个用中文路径，全部测试报
+> `ClassNotFoundException`；第三个丢了 `-Dfile.encoding=UTF-8`，仍失败。**只用 `_bx4.sh`**。
+> 两个 `-D` 缺一不可：没有 `-Djava.io.tmpdir=D:\demo\_tmp` 时，Gradle 的 JVM 在
+> `C:\Users\...\Local\Temp` 撞 `AccessDeniedException`（同一目录用 python 或裸 java 创建
+> 同名文件都成功，是 Gradle 进程特有的限制）。
 
 - `:app:assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`
 - `:app:versionedApk` → `build/apk/jijian-music-<版本>-vc<号>.apk`（**给用户的就是这个**，见第六节）
 - `:app:versionedDebugApk` → 同目录的 `-debug` 变体
-- `:app:testDebugUnitTest` → 273 项单元测试；统计用 python 解析
+- `:app:testDebugUnitTest` → 289 项单元测试；统计用 `python -X utf8 _cnt.py`（另有 `_per_class.py`）解析
   `app/build/test-results/testDebugUnitTest/*.xml` 的 `tests=` / `failures=` / `errors=` 属性
   （不要用 PowerShell 的 `[xml]`，会把中文测试名弄乱）
 
@@ -424,7 +436,7 @@ python -X utf8 _x.py
 |---|---|---|
 | 设置页加「检查更新」按钮 | 新增 `net/UpdateChecker.kt`：一次 HTTP 拉 `repos/{repo}/releases/latest`，解析成 `UpdateInfo`。`MainViewModel.checkForUpdates()` 里 `viewModelScope.launch { withContext(Dispatchers.IO) { ... } }`，`checkSeq` 递增驱动对话框只弹一次 | `UpdateCheckerTest`（11） |
 | 拉取当前 GitHub 版本并判断是否更新 | `UpdateChecker.compareVersions(a, b)` / `isNewer(remote, current)`：`v1.0.2` 与 `1.0.2` 等价、缺位补 0、数字分段**按数值比**（`1.0.10 > 1.0.9`）、预发布后缀字典比且「无后缀 > 有后缀」 | `UpdateCheckerTest`（6 个版本比较用例） |
-| 更新内容公告 | `UpdateDialog` 显示本机版本 / 最新版本 / 安装包大小 + release body（`notes`）；有 release 链接时给「前往下载」ACTION_VIEW。设置页「检查更新」行的副标题实时反映状态（IDLE / CHECKING / UP_TO_DATE / AVAILABLE / FAILED） | 实机点按 |
+| 更新内容公告 | `UpdateDialog` 显示本机版本 / 最新版本 / 安装包大小 + release body（`notes`）。**V1.1.7 起改为应用内下载安装**：`ApkDownloader` 流式落盘 + digest 校验，`UpdateInstaller` 经 FileProvider 拉起系统安装器，不再跳浏览器 | 实机点按 |
 | ~~私有仓拿不到数据~~ | V1.0.2 时的历史：仓库是私有的，匿名 `/releases/latest` 返回 404，于是加了「访问令牌」设置项。**V1.1.4 仓库转公开后这条与令牌一起删除**，现在匿名请求即可 | — |
 
 > **读写同键是硬约束**：`SettingsStore` 的读写两侧必须用同一个 KEY 常量。键名拼错
@@ -599,11 +611,11 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 
 - [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\02_开发工具链\android-sdk` 存在
 - [ ] 确认 `subst X: "D:\demo\01_项目代码"` 已生效（否则 Kotlin 编译守护进程会崩，见第二节）
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 273 测试 0 失败
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 289 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.6-vc11.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.7-vc12.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---
@@ -713,6 +725,67 @@ UI 上没有入口按钮：一年是一个关于用户的事实，不是需要�
 - `MusicInfo.qualitys` + `QualityInfo`：零引用。**不需要迁移**——曲目在库里是
   `musicJson` 字符串，Gson 忽略多余键。
 - `navigation-compose` 依赖、空目录 `docs/adr/`。
+
+---
+
+---
+
+## 十五、V1.1.7 设计与架构记录
+
+主题是「更新不该把一个正在听歌的人送出应用」。顺带清掉设置页那批解释性副标题。
+
+### 1. 应用内下载安装（`net/ApkDownloader.kt` + `update/UpdateInstaller.kt`）
+
+旧的 `UpdateDialog` 只有一条出路：`Intent.ACTION_VIEW` 打开 `browser_download_url`。
+用户被扔进浏览器，能不能装回来看运气。现在整个闭环留在应用内。
+
+**流式落盘，不进内存**。`HttpBridge` 是全量缓冲的（`raw: ByteArray`），对几 KB 的
+release JSON 没问题，对 16 MB 的安装包是致命的。`ApkDownloader.download` 用 OkHttp
+的 `body.byteStream()` 以 64 KB 缓冲写 `<dest>.part`，成功才 `renameTo(dest)`——
+中断的下载不会留下一个「看起来能装」的半截 APK。
+
+**先校验，再交给安装器**。GitHub 的 release asset 带 `digest: "sha256:<hex>"`，
+`parseRelease` 现在把它和 `browser_download_url` 一起读进 `UpdateInfo.apkDigest` /
+`apkUrl`。下载完成后 `ApkDownloader.sha256(file)` 比对，不匹配**删文件**并报错，
+绝不让一个被截断或被替换的包装上去。`digestMatches` 的三条分支各有理由：
+发布时没写 digest → 放行（否则那个版本永远装不上）；写了 digest 但文件读不出来
+→ 判失败（那正是损坏下载的样子）；否则严格比对。
+
+**必须选 release 包，不是 debug 包**。这条是实测踩出来的：
+`releases/latest` 的资产顺序里 debug 包在前
+（`jijian-music-1.1.6-vc11-debug.apk` 23,038,164 B 在 `jijian-music-1.1.6-vc11.apk`
+15,882,842 B 之前），原来「取第一个 .apk」的实现会把 debug 包下下来——
+签名不同，装到正式版上直接冲突。现在收集全部 `.apk` 后
+`firstOrNull { !it.name.contains("debug", true) } ?: firstOrNull()`。
+
+**FileProvider 是硬要求**。API 24 起跨应用递 `file://` 会抛
+`FileUriExposedException`。`AndroidManifest.xml` 加了
+`androidx.core.content.FileProvider`，authority `${applicationId}.fileprovider`，
+meta-data 指 `@xml/update_paths`（`<cache-path name="updates" path="updates/" />`），
+`UpdateInstaller.install` 用 `FileProvider.getUriForFile` 换 `content://` 再配
+`FLAG_GRANT_READ_URI_PERMISSION`。安装包放 `cacheDir/updates/`，**不占用户可见存储**。
+
+**「安装未知应用」要能被重试**。API 26 起非商店安装需要用户逐应用授权。
+`InstallOutcome` 三态（`LAUNCHED` / `NEEDS_PERMISSION` / `FAILED`）里，
+`NEEDS_PERMISSION` 会跳 `Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES`。授权回来后
+`install.seq` 没变，驱动安装的 `LaunchedEffect(install.seq)` 不会自己再跑，
+对话框原本会退回「下载并安装」——重下 16 MB 只为再撞一次权限墙。现在
+`InstallStatus.READY` 单独给一个「去安装」按钮，直接重放本地文件。
+
+**取消要真的取消**。`cancelInstall()` 早期只重置 StateFlow，协程还在后台把 16 MB
+流完，然后覆盖状态为 READY，反手弹出「安装」。现在持有 `installJob`，
+取消时 `job.cancel()` 并清空缓存目录；`downloadUpdate` 里 `if (!isActive) return@launch`
+拦住被取消协程的收尾写入。
+
+### 2. 删除解释性副标题（`ui/screens/SettingsScreen.kt`）
+
+设置页每条开关下面的那行说明（「同时决定首页「接着听」有没有内容」、
+「只影响「播放统计」页，与「最近播放」无关」等）全部删除。
+`SwitchRow` / `InfoRow` 的 `subtitle` 改成带默认值的可选参数，调用点不传即不渲染。
+`TrackActionsSheet` 的两条同风格说明一并删。
+
+**留下的**：`"已授权 N 个文件夹 · 已手动添加 N 首"`（是数据不是解释）、
+`updateSubtitle` 的非 IDLE 状态（是结果不是解释）。
 
 ---
 

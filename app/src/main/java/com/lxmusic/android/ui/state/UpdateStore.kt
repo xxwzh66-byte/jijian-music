@@ -2,33 +2,46 @@ package com.lxmusic.android.ui.state
 
 import com.lxmusic.android.BuildConfig
 import com.lxmusic.android.data.settings.SettingsStore
+import com.lxmusic.android.net.ApkDownloader
 import com.lxmusic.android.net.UpdateChecker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
- * Owns the "check for updates" flow.
+ * Owns both halves of "is there a newer version, and can I get it".
  *
- * Fetches `releases/latest` from GitHub and compares the tag against
- * [BuildConfig.VERSION_NAME]. All network work happens on IO; the result lands
- * in [updateCheck] and the UI decides whether to surface it.
+ * [updateCheck] answers the first question (GitHub `releases/latest`, compared
+ * against [BuildConfig.VERSION_NAME]). [install] answers the second by pulling
+ * the APK itself, so updating never leaves the app.
  */
 class UpdateStore(
     private val settingsStore: SettingsStore,
     private val scope: CoroutineScope,
+    /** Where finished APKs live. Cache-dir based; see MainViewModel. */
+    private val apkDir: () -> File,
+    private val downloader: () -> ApkDownloader = { ApkDownloader() },
     private val checker: () -> UpdateChecker = { UpdateChecker() },
 ) {
 
     private val _update = MutableStateFlow(UpdateCheckState(currentVersion = BuildConfig.VERSION_NAME))
     val updateCheck: StateFlow<UpdateCheckState> = _update.asStateFlow()
 
+    private val _install = MutableStateFlow(UpdateInstallState())
+    val install: StateFlow<UpdateInstallState> = _install.asStateFlow()
+
     private var seq = 0
+    private var installSeq = 0
+
+    /** The running download, so [cancelInstall] can actually stop it. */
+    private var installJob: Job? = null
 
     fun check() = run(silent = false)
 
@@ -83,6 +96,123 @@ class UpdateStore(
                 },
             )
         }
+    }
+
+    // ---------------- in-app install ----------------
+
+    /**
+     * Downloads the APK that [updateCheck] found and leaves it verified on disk.
+     *
+     * The download URL comes from the release metadata, not from a string the
+     * user typed, and the file is checked against the digest GitHub published;
+     * a mismatch deletes the file rather than offering it to the installer.
+     */
+    fun downloadUpdate() {
+        val info = _update.value.latest ?: return
+        if (_update.value.status != UpdateStatus.AVAILABLE) return
+        val url = info.apkUrl
+        if (url.isNullOrBlank()) {
+            failInstall("这个版本没有提供安装包，请到发布页下载")
+            return
+        }
+        if (_install.value.status == InstallStatus.DOWNLOADING) return
+
+        installSeq += 1
+        _install.value = UpdateInstallState(
+            status = InstallStatus.DOWNLOADING,
+            total = info.apkSize,
+            seq = installSeq,
+        )
+
+        installJob?.cancel()
+        installJob = scope.launch {
+            val stored = withContext(Dispatchers.IO) {
+                // Clear leftovers from a previous attempt: a stale APK of an
+                // older version sitting in the cache is one more thing that can
+                // be installed by mistake.
+                purgeApkDir()
+                val dest = File(apkDir(), ApkDownloader.fileNameFor(info.apkName))
+
+                val download = downloader().download(url, dest) { written, total ->
+                    _install.value = _install.value.copy(
+                        status = InstallStatus.DOWNLOADING,
+                        written = written,
+                        total = if (total > 0L) total else _install.value.total,
+                    )
+                }
+                val ok = download.getOrNull()
+                if (ok == null) {
+                    Result.failure(download.exceptionOrNull() ?: IllegalStateException("下载失败"))
+                } else {
+                    _install.value = _install.value.copy(status = InstallStatus.VERIFYING)
+                    val actual = ApkDownloader.sha256(ok)
+                    if (ApkDownloader.digestMatches(info.apkDigest, actual)) {
+                        Result.success(ok)
+                    } else {
+                        ok.delete()
+                        Result.failure(IllegalStateException("安装包校验失败，已丢弃"))
+                    }
+                }
+            }
+
+            if (!isActive) return@launch
+            installJob = null
+            installSeq += 1
+            _install.value = stored.fold(
+                onSuccess = { file ->
+                    UpdateInstallState(
+                        status = InstallStatus.READY,
+                        written = file.length(),
+                        total = file.length(),
+                        filePath = file.absolutePath,
+                        seq = installSeq,
+                    )
+                },
+                onFailure = { e ->
+                    UpdateInstallState(
+                        status = InstallStatus.FAILED,
+                        message = e.message ?: "下载失败",
+                        seq = installSeq,
+                    )
+                },
+            )
+        }
+    }
+
+    /**
+     * Stops a running download.
+     *
+     * Cancelling the job rather than only resetting the flow matters: without it
+     * the coroutine keeps streaming 16 MB in the background and then overwrites
+     * the state with READY, offering to install a file the user just refused.
+     */
+    fun cancelInstall() {
+        if (_install.value.status == InstallStatus.IDLE) return
+        installJob?.cancel()
+        installJob = null
+        scope.launch(Dispatchers.IO) { purgeApkDir() }
+        installSeq += 1
+        _install.value = UpdateInstallState(seq = installSeq)
+    }
+
+    /** Called once the installer has been launched or declined. */
+    fun acknowledgeInstall() {
+        installSeq += 1
+        _install.value = UpdateInstallState(seq = installSeq)
+    }
+
+    /** Deletes every file this store ever put in [apkDir]; safe to call twice. */
+    private fun purgeApkDir() {
+        runCatching {
+            val dir = apkDir()
+            dir.mkdirs()
+            dir.listFiles()?.forEach { if (it.isFile) it.delete() }
+        }
+    }
+
+    private fun failInstall(message: String) {
+        installSeq += 1
+        _install.value = UpdateInstallState(InstallStatus.FAILED, message = message, seq = installSeq)
     }
 
     private companion object {

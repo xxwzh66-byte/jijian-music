@@ -98,7 +98,10 @@ app/src/main/java/com/lxmusic/android/
 │   └── EmbeddedLyrics.kt        # ID3 / FLAC / Ogg / MP4 tag reader
 ├── net/
 │   ├── HttpBridge.kt            # OkHttp wrapper
+│   ├── ApkDownloader.kt         # V1.1.7: streaming APK download + sha256 digest check
 │   └── UpdateChecker.kt         # V1.0.2: GitHub Releases latest -> UpdateInfo
+├── update/
+│   └── UpdateInstaller.kt       # V1.1.7: FileProvider -> system package installer
 ├── player/
 │   ├── PlaybackService.kt       # MediaSessionService + ExoPlayer
 │   ├── PlayerController.kt      # playback state, queue, draw policy
@@ -288,10 +291,11 @@ on your device. Respect copyright and the laws of your jurisdiction.
 ./gradlew :app:testDebugUnitTest
 ```
 
-273 unit tests across 29 classes, all green (run `./gradlew :app:testDebugUnitTest`):
+289 unit tests across 30 classes, all green (run `./gradlew :app:testDebugUnitTest`):
 
 | Test class | Cases | Covers |
 |---|---:|---|
+| `net/ApkDownloaderTest` | 12 | **V1.1.7**: `fileNameFor` refuses path traversal (`../../etc/app.apk` → `app.apk`) and always yields one `.apk`; `fraction` clamps over-run to 1f and returns 0f on an unknown total; `digestMatches` passes without a published digest, fails on a published digest with an unreadable file, and accepts bare hex as well as `sha256:` |
 | `data/backup/BackupCodecTest` | 15 | **V1.1.6**: fingerprint ignores case/whitespace/sub-second drift, exact id wins over fingerprint, duplicates take the first local track, `report` splits exact / matched / missing, JSON round-trip, unknown future version and garbage rejected, zip **and** bare-JSON containers |
 | `data/stats/AnnualReportTest` | 10 | **V1.1.6**: year window is closed at both ends (future-stamped events from a restore cannot leak in), duration sums every play, blank singer collapses to 未知歌手, top artist/track tie-breaking, empty year returns a report instead of throwing |
 | `ui/shell/RouteStackTest` | 11 | **V1.1.6**: reopening a route is a no-op, two group routes with different keys coexist, `close` works out of order, `closeTop` follows the draw order not the open order, group kind derived from the `album:`/`artist:` prefix |
@@ -313,7 +317,7 @@ on your device. Respect copyright and the laws of your jurisdiction.
 | `player/RandomShuffleStateStalenessTest` | 6 | memo never goes out of range after the queue shrinks |
 | `ui/theme/OledTokensTest` | 6 | OLED token contrast ratios |
 | `data/SettingsRoundTripTest` | 10 | every preference key is written and read back through the *same* key constant — the "equalizer does not survive a restart" class of bug cannot hide behind a default-only assertion; the V1.0.2 update token is checked the same way |
-| `net/UpdateCheckerTest` | 11 | **V1.0.2**: release-tag version comparison (leading `v`, numeric segments, prerelease suffix ordering) and GitHub release JSON parsing (first `.apk` asset, title fallback, graceful degradation on missing fields) — no network in unit tests |
+| `net/UpdateCheckerTest` | 15 | **V1.0.2**: release-tag version comparison (leading `v`, numeric segments, prerelease suffix ordering) and GitHub release JSON parsing (title fallback, graceful degradation on missing fields) — no network in unit tests. **V1.1.7** adds four cases pinning asset choice: the release build wins when both APKs are published, debug remains usable when it is all there is, `apkUrl`/`apkDigest` are read off the *chosen* asset, and a release without a digest leaves it null |
 | `data/SettingsTest` | 4 | settings defaults (incl. flat EQ profile) / enum values |
 | `local/SafMusicScannerTest` | 5 | audio extension / mime detection |
 | `player/QueueIndexTest` | 5 | a queue slot is only real if the *id* at that slot is the track playing — the online-queue `playIndex(3)` → reported-as-0 defect |
@@ -329,6 +333,70 @@ explains the root causes behind them.
 `NeonTokensTest` is the same idea for the visual layer: it recomputes WCAG
 contrast over the *brightest possible* aurora composite on every palette, so a
 future "make it pop more" tweak cannot silently drop body text below AA.
+
+---
+
+## V1.1.7 — The update installs itself, and the settings page stops explaining itself (`versionCode = 12`)
+
+### Updating no longer leaves the app
+
+The old update dialog had exactly one exit: `Intent.ACTION_VIEW` onto
+`browser_download_url`. You got thrown into a browser and whether the APK ever
+came back was your problem. The whole loop now stays inside the app.
+
+`net/ApkDownloader.kt` streams the release asset to `cacheDir/updates/` through a
+64 KB buffer, writing `<dest>.part` and renaming on success — an interrupted
+download can never masquerade as an installable APK. It is deliberately *not*
+`HttpBridge`: that one buffers the whole body into a `ByteArray`, which is fine
+for a few KB of release JSON and fatal for a 16 MB installer.
+
+Verification happens before the installer ever sees the file. GitHub publishes
+each asset with `digest: "sha256:<hex>"`, so `parseRelease` now reads
+`browser_download_url` and `digest` alongside the name and size; after the
+download `ApkDownloader.sha256(file)` is compared and a mismatch **deletes the
+file** instead of offering it. `digestMatches` has three branches on purpose: no
+published digest passes (or that release could never install), a published
+digest with an unreadable file fails (that is what a corrupted download looks
+like), otherwise strict comparison.
+
+`update/UpdateInstaller.kt` hands the file over through a `FileProvider`
+(`${applicationId}.fileprovider` → `@xml/update_paths`, `<cache-path
+name="updates" path="updates/" />`), because a `file://` URI crossing a package
+boundary throws `FileUriExposedException` on API 24+.
+
+### The debug APK was one click away
+
+Found by actually calling the API. GitHub lists release assets in upload order,
+and for v1.1.6 that puts `jijian-music-1.1.6-vc11-debug.apk` (23,038,164 B)
+*before* `jijian-music-1.1.6-vc11.apk` (15,882,842 B). The original
+"first `.apk`" parse would have downloaded the debug build — different signature,
+guaranteed conflict against the installed release. `parseRelease` now collects
+every `.apk` and prefers `firstOrNull { !it.name.contains("debug", true) }`.
+
+### Two states that would have bitten later
+
+`NEEDS_PERMISSION` — Android asks the user to allow installs from this app
+(`Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES`). On return, `install.seq` has not
+changed, so the `LaunchedEffect(install.seq)` driving the install does not re-run
+and the dialog would fall back to "下载并安装" — re-downloading 16 MB to hit the
+same wall. `InstallStatus.READY` now gets its own "去安装" button that replays the
+local file.
+
+`cancelInstall()` — resetting the `StateFlow` alone left the coroutine streaming
+in the background, which then overwrote the state to `READY` and offered to
+install the file the user had just refused. The store now holds `installJob`,
+cancels it, purges the cache directory, and the download body bails with
+`if (!isActive) return@launch` so a cancelled job cannot write a final state.
+
+### Settings stopped explaining itself
+
+Every explanatory subtitle under a settings toggle is gone — "同时决定首页「接着听」
+有没有内容", "只影响「播放统计」页，与「最近播放」无关", and the rest. `SwitchRow` and
+`InfoRow` take `subtitle: String? = null`, so call sites simply do not pass one.
+The same treatment for the two lines in `TrackActionsSheet`.
+
+What stayed: `"已授权 N 个文件夹 · 已手动添加 N 首"` (that is data, not prose) and
+the non-IDLE states of `updateSubtitle` (that is a result, not prose).
 
 ---
 

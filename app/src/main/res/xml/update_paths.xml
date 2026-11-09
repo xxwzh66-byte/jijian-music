@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Serves downloaded update APKs out of cache/updates to the system installer.
+     Android 7+ forbids file:// URIs across app boundaries, so the installer
+     has to be handed a content:// URI it is granted read access to. -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

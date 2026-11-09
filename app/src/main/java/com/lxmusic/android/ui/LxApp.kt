@@ -59,6 +59,7 @@ fun LxApp(viewModel: MainViewModel) {
     // V1.0.3: 启动静默检查更新（每 24h 一次，见 MainViewModel.maybeCheckForUpdatesOnStartup）。
     LaunchedEffect(viewModel) { viewModel.maybeCheckForUpdatesOnStartup() }
     val updateState by viewModel.updateCheck.collectAsState()
+    val updateInstall by viewModel.updateInstall.collectAsState()
     // V1.1.6: 五块幕布的开关从五个布尔值收成一条 Route 栈。这样详情页这类
     // 带参数的页面才装得进来（"打开 key 为 X 的专辑"没法用一个 Boolean 表达）。
     val routeStack by viewModel.routes.stack.collectAsState()
@@ -192,7 +193,20 @@ fun LxApp(viewModel: MainViewModel) {
     )
 
     if (showUpdateDialog) {
-        UpdateDialog(state = updateState, onDismiss = { showUpdateDialog = false })
+        UpdateDialog(
+            state = updateState,
+            install = updateInstall,
+            onDownload = viewModel::downloadUpdate,
+            onCancelDownload = viewModel::cancelUpdateDownload,
+            onInstalled = {
+                viewModel.acknowledgeUpdateInstall()
+                showUpdateDialog = false
+            },
+            onDismiss = {
+                viewModel.acknowledgeUpdateInstall()
+                showUpdateDialog = false
+            },
+        )
     }
 
     actionTarget?.let { music ->

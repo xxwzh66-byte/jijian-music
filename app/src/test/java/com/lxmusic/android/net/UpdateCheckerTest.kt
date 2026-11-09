@@ -72,7 +72,7 @@ class UpdateCheckerTest {
     """.trimIndent()
 
     @Test
-    fun parseReleasePicksTheFirstApkAssetAndIgnoresEverythingElse() {
+    fun parseReleasePicksTheOnlyApkAndIgnoresEverythingElse() {
         val info = UpdateChecker.parseRelease(full)
         assertEquals("v1.0.1", info.tagName)
         assertEquals("极简music 1.0.1 (vc2)", info.title)
@@ -84,6 +84,66 @@ class UpdateCheckerTest {
         )
         // 更新内容公告的正文就是 release body，原样交给对话框。
         assertTrue(info.notes.contains("上一首"))
+    }
+
+    @Test
+    fun theReleaseBuildWinsWhenBothApksArePublished() {
+        // 实际情况就是这样：debug 包在资产列表里排前面，而它用 debug key
+        // 签名，装到正式版上必然签名冲突，所以不能按顺序取第一个。
+        val info = UpdateChecker.parseRelease(
+            """
+            {
+              "tag_name": "v1.1.6",
+              "assets": [
+                {"name": "jijian-music-1.1.6-vc11-debug.apk", "size": 23038164,
+                 "browser_download_url": "https://example/debug.apk",
+                 "digest": "sha256:aaa"},
+                {"name": "jijian-music-1.1.6-vc11.apk", "size": 15882842,
+                 "browser_download_url": "https://example/release.apk",
+                 "digest": "sha256:bbb"}
+              ]
+            }
+            """.trimIndent(),
+        )
+        assertEquals("jijian-music-1.1.6-vc11.apk", info.apkName)
+        assertEquals(15882842L, info.apkSize)
+        assertEquals("https://example/release.apk", info.apkUrl)
+        assertEquals("sha256:bbb", info.apkDigest)
+    }
+
+    @Test
+    fun theDebugBuildIsStillUsableWhenItIsAllThereIs() {
+        val info = UpdateChecker.parseRelease(
+            """{"tag_name":"v1.0.1","assets":[{"name":"app-debug.apk","size":5,
+               "browser_download_url":"https://example/a.apk"}]}""",
+        )
+        assertEquals("app-debug.apk", info.apkName)
+        assertEquals("https://example/a.apk", info.apkUrl)
+    }
+
+    @Test
+    fun parseReleaseReadsTheDownloadUrlAndDigestOfTheChosenApk() {
+        val info = UpdateChecker.parseRelease(
+            """
+            {"tag_name":"v1.1.7","assets":[
+              {"name":"jijian-music-1.1.7-vc12.apk","size":12345,
+               "browser_download_url":"https://example/dl/1.1.7.apk",
+               "digest":"sha256:deadbeef"}
+            ]}
+            """.trimIndent(),
+        )
+        assertEquals("https://example/dl/1.1.7.apk", info.apkUrl)
+        assertEquals("sha256:deadbeef", info.apkDigest)
+    }
+
+    @Test
+    fun aReleaseWithoutADigestLeavesItNull() {
+        val info = UpdateChecker.parseRelease(
+            """{"tag_name":"v1.0.0","assets":[{"name":"app.apk","size":10,
+               "browser_download_url":"https://example/a.apk"}]}""",
+        )
+        assertEquals("https://example/a.apk", info.apkUrl)
+        assertNull(info.apkDigest)
     }
 
     @Test

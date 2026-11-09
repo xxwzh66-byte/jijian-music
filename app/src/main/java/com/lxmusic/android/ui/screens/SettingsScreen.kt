@@ -58,6 +58,11 @@ import com.lxmusic.android.ui.theme.AppPalettes
 import com.lxmusic.android.ui.components.toast
 import com.lxmusic.android.ui.state.BackupStatus
 import com.lxmusic.android.ui.state.BackupUiState
+import com.lxmusic.android.ui.state.InstallStatus
+import com.lxmusic.android.ui.state.UpdateInstallState
+import com.lxmusic.android.update.InstallOutcome
+import com.lxmusic.android.update.UpdateInstaller
+import androidx.compose.material3.LinearProgressIndicator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,6 +87,7 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
 
     // ---------------- update (V1.0.2) ----------------
     val up by viewModel.updateCheck.collectAsState()
+    val install by viewModel.updateInstall.collectAsState()
     var showUpdateDialog by remember { mutableStateOf(false) }
     // V1.1.4: 折叠状态。外观默认展开，其余收起。
     // 用「以换行分隔的组名」这个字符串存，而不是 Map——rememberSaveable 的
@@ -156,7 +162,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 item {
                     SwitchRow(
                         title = "播放页显示歌名信息",
-                        subtitle = "关闭后唱片样式不再显示歌名与歌手",
                         checked = s.showPlayerMeta,
                         onCheckedChange = viewModel::setShowPlayerMeta,
                     )
@@ -169,7 +174,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 item {
                     SwitchRow(
                         title = "播放时记录历史",
-                        subtitle = "同时决定首页「接着听」有没有内容",
                         checked = s.recordHistory,
                         onCheckedChange = viewModel::setRecordHistory,
                     )
@@ -177,7 +181,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 item {
                     SwitchRow(
                         title = "记录播放统计",
-                        subtitle = "只影响「播放统计」页，与「最近播放」无关",
                         checked = s.recordStats,
                         onCheckedChange = viewModel::setRecordStats,
                     )
@@ -185,7 +188,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 item {
                     SwitchRow(
                         title = "耳机拔出时暂停",
-                        subtitle = null,
                         checked = s.pauseOnHeadsetUnplug,
                         onCheckedChange = viewModel::setPauseOnHeadsetUnplug,
                     )
@@ -211,7 +213,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 item {
                     SwitchRow(
                         title = "优先读取同目录 .lrc",
-                        subtitle = null,
                         checked = s.preferLrcFile,
                         onCheckedChange = viewModel::setPreferLrcFile,
                     )
@@ -231,7 +232,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 item {
                     SwitchRow(
                         title = "启动时自动扫描",
-                        subtitle = null,
                         checked = s.autoScanOnStart,
                         onCheckedChange = viewModel::setAutoScan,
                     )
@@ -239,7 +239,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 item {
                     SwitchRow(
                         title = "扫描时读取内嵌封面",
-                        subtitle = null,
                         checked = s.readEmbeddedCover,
                         onCheckedChange = viewModel::setReadEmbeddedCover,
                     )
@@ -262,7 +261,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 item {
                     InfoRow(
                         title = "从备份恢复",
-                        subtitle = "合并收藏、歌单、播放记录与偏好设置，不会删除现有数据",
                         onClick = {
                             viewModel.acknowledgeBackup()
                             importPicker.launch(arrayOf("application/octet-stream", "application/zip"))
@@ -277,7 +275,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 item {
                     SwitchRow(
                         title = "启动时自动检查更新",
-                        subtitle = "进入应用后拉取一次 GitHub 上的最新版本，每天最多一次",
                         checked = s.autoCheckUpdates,
                         onCheckedChange = viewModel::setAutoCheckUpdates,
                     )
@@ -309,7 +306,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             item {
                 InfoRow(
                     title = "清空数据",
-                    subtitle = "删除收藏、歌单、历史与全部设置",
                     danger = true,
                     onClick = { showClearDialog = true },
                 )
@@ -330,13 +326,26 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     }
 
     if (showUpdateDialog) {
-        UpdateDialog(state = up, onDismiss = { showUpdateDialog = false })
+        UpdateDialog(
+            state = up,
+            install = install,
+            onDownload = viewModel::downloadUpdate,
+            onCancelDownload = viewModel::cancelUpdateDownload,
+            onInstalled = {
+                viewModel.acknowledgeUpdateInstall()
+                showUpdateDialog = false
+            },
+            onDismiss = {
+                viewModel.acknowledgeUpdateInstall()
+                showUpdateDialog = false
+            },
+        )
     }
 }
 
 /** V1.0.2: 「检查更新」一行的副标题，随状态换文案。 */
-private fun updateSubtitle(state: UpdateCheckState, current: String): String = when (state.status) {
-    UpdateStatus.IDLE -> "拉取 GitHub 上的最新版本"
+private fun updateSubtitle(state: UpdateCheckState, current: String): String? = when (state.status) {
+    UpdateStatus.IDLE -> null
     UpdateStatus.CHECKING -> "正在检查…"
     UpdateStatus.UP_TO_DATE -> "已是最新版本（$current）"
     UpdateStatus.AVAILABLE -> "有新版本：${state.latest?.tagName ?: "?"}，点按看更新内容"
@@ -344,24 +353,56 @@ private fun updateSubtitle(state: UpdateCheckState, current: String): String = w
 }
 
 /**
- * V1.0.2: 「更新内容公告」对话框。
+ * 「更新内容公告」对话框，同时也是更新入口。
  *
- * 成功时把 release 的标题与正文（就是 GitHub 上的 release notes）滚出来，
- * 外加本机/最新版本与 APK 大小；有 release 页面就给「前往下载」。
- * V1.0.3 起首页的公告条也复用它，所以改为 internal。
+ * V1.1.7 起不再把用户送去 GitHub：点了「下载并安装」就地把 release 的 APK
+ * 拉进 cache，校验过 SHA-256 之后交给系统安装器。进度、失败原因都留在这一屏。
  */
 @Composable
-internal fun UpdateDialog(state: UpdateCheckState, onDismiss: () -> Unit) {
+internal fun UpdateDialog(
+    state: UpdateCheckState,
+    install: UpdateInstallState,
+    onDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onInstalled: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val info = state.latest
-    val hasLink = state.status == UpdateStatus.AVAILABLE && !info?.url.isNullOrBlank()
+    val canInstall = state.status == UpdateStatus.AVAILABLE && !info?.apkUrl.isNullOrBlank()
+    val busy = install.status == InstallStatus.DOWNLOADING || install.status == InstallStatus.VERIFYING
     val title = when (state.status) {
         UpdateStatus.AVAILABLE -> "发现新版本 ${info?.tagName ?: ""}"
         UpdateStatus.UP_TO_DATE -> "已是最新版本"
         else -> "检查更新"
     }
+
+    // 下载完成就交给系统安装器，只交一次：seq 每次状态变化才递增，
+    // 重组不会重复触发。没有「安装未知应用」权限时先去申请，回来再点一次。
+    androidx.compose.runtime.LaunchedEffect(install.seq) {
+        if (install.status != InstallStatus.READY) return@LaunchedEffect
+        when (UpdateInstaller.install(context, install.filePath)) {
+            InstallOutcome.LAUNCHED -> onInstalled()
+            InstallOutcome.NEEDS_PERMISSION -> {
+                toast(context, "请允许安装未知应用后重试")
+                UpdateInstaller.requestInstallPermission(context)
+            }
+            InstallOutcome.FAILED -> toast(context, "无法启动安装程序")
+        }
+    }
+
+    // 被「安装未知应用」挡回来之后的重试：文件早已下好并校验过，再点一次是
+    // 去授权，不该重下 16 MB。seq 没有变，所以上面那个 LaunchedEffect 不会自己再跑。
+    val retryInstall: () -> Unit = {
+        when (UpdateInstaller.install(context, install.filePath)) {
+            InstallOutcome.LAUNCHED -> onInstalled()
+            InstallOutcome.NEEDS_PERMISSION -> UpdateInstaller.requestInstallPermission(context)
+            InstallOutcome.FAILED -> Unit
+        }
+    }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(title) },
         text = {
             Column(
@@ -387,26 +428,61 @@ internal fun UpdateDialog(state: UpdateCheckState, onDismiss: () -> Unit) {
                         Text("（这个版本没有写更新内容）", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+
+                when (install.status) {
+                    InstallStatus.DOWNLOADING -> {
+                        Spacer(Modifier.height(16.dp))
+                        if (install.isIndeterminate) {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                        } else {
+                            LinearProgressIndicator(
+                                progress = { install.progress },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "正在下载 ${install.sizeText}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    InstallStatus.VERIFYING -> {
+                        Spacer(Modifier.height(16.dp))
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "正在校验安装包…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    InstallStatus.FAILED -> {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            install.message ?: "下载失败",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    else -> Unit
+                }
             }
         },
         confirmButton = {
-            if (hasLink) {
-                TextButton(onClick = {
-                    runCatching {
-                        context.startActivity(
-                            android.content.Intent(
-                                android.content.Intent.ACTION_VIEW,
-                                android.net.Uri.parse(info!!.url),
-                            ),
-                        )
-                    }.onFailure { toast(context, "无法打开下载页面") }
-                }) { Text("前往下载") }
-            } else {
-                TextButton(onClick = onDismiss) { Text("知道了") }
+            when {
+                busy -> TextButton(onClick = onCancelDownload) { Text("取消下载") }
+                install.status == InstallStatus.READY -> TextButton(onClick = retryInstall) {
+                    Text("去安装")
+                }
+                canInstall -> TextButton(onClick = onDownload) {
+                    Text(if (install.status == InstallStatus.FAILED) "重试下载" else "下载并安装")
+                }
+                else -> TextButton(onClick = onDismiss) { Text("知道了") }
             }
         },
         dismissButton = {
-            if (hasLink) TextButton(onClick = onDismiss) { Text("关闭") }
+            if (!busy) TextButton(onClick = onDismiss) { Text("稍后") }
         },
     )
 }
@@ -478,7 +554,12 @@ private fun <T> ChoiceRow(title: String, options: List<Pair<T, String>>, selecte
 }
 
 @Composable
-private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    subtitle: String? = null,
+) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -516,7 +597,12 @@ private fun SliderRow(
 }
 
 @Composable
-private fun InfoRow(title: String, subtitle: String?, danger: Boolean = false, onClick: () -> Unit) {
+private fun InfoRow(
+    title: String,
+    onClick: () -> Unit,
+    subtitle: String? = null,
+    danger: Boolean = false,
+) {
     Column(
         Modifier.fillMaxWidth().clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -543,9 +629,9 @@ private fun backupFileName(): String {
     return "jijian-music-$stamp.jjmbackup"
 }
 
-/** Status line under the export row. */
-private fun backupSubtitle(state: BackupUiState): String = when (state.status) {
-    BackupStatus.IDLE -> "导出收藏、歌单、播放记录与偏好，存成一个 .jjmbackup 文件"
+/** Status line under the export row; null when there is nothing to report. */
+private fun backupSubtitle(state: BackupUiState): String? = when (state.status) {
+    BackupStatus.IDLE -> null
     BackupStatus.EXPORTING -> "正在导出……"
     BackupStatus.IMPORTING -> "正在恢复……"
     BackupStatus.DONE -> state.message ?: "完成"

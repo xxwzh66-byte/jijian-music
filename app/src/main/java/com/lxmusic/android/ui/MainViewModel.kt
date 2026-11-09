@@ -74,7 +74,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val libraryStore = MediaLibraryStore(app, repo, settingsStore, viewModelScope)
     val playerUi = PlayerUiStore(app, settingsStore, viewModelScope)
     val statsStore = StatsStore(repo, viewModelScope)
-    val updateStore = UpdateStore(settingsStore, viewModelScope)
+    // Downloaded APKs go in the cache: they are worthless once installed, and
+    // the system may reclaim them at any time without losing anything.
+    val updateStore = UpdateStore(
+        settingsStore = settingsStore,
+        scope = viewModelScope,
+        apkDir = { java.io.File(app.cacheDir, "updates") },
+    )
     val backupStore = BackupStore(app, settingsStore, viewModelScope) {
         libraryStore.local.value.allTracks
     }
@@ -94,6 +100,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** This calendar year, summarised. Independent of the range chips. */
     val annual: StateFlow<AnnualReport?> get() = statsStore.annual
     val updateCheck: StateFlow<UpdateCheckState> get() = updateStore.updateCheck
+    val updateInstall: StateFlow<UpdateInstallState> get() = updateStore.install
     val backup: StateFlow<BackupUiState> get() = backupStore.state
 
     val playerController get() = playerUi.controller
@@ -243,6 +250,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun checkForUpdates() = updateStore.check()
     fun maybeCheckForUpdatesOnStartup() = updateStore.maybeCheckOnStartup()
     fun setAutoCheckUpdates(on: Boolean) = updateStore.setAutoCheckUpdates(on)
+
+    /** Pull the discovered release APK into the cache, verified. */
+    fun downloadUpdate() = updateStore.downloadUpdate()
+    fun cancelUpdateDownload() = updateStore.cancelInstall()
+    fun acknowledgeUpdateInstall() = updateStore.acknowledgeInstall()
 
     // ---------------- playback ----------------
 
