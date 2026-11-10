@@ -92,4 +92,30 @@ class ApkDownloaderTest {
         // compare), but a published digest with no hash is a mismatch.
         assertFalse(ApkDownloader.digestMatches("sha256:abcdef", null))
     }
+
+    // ---------------- canAppend（V1.1.8 断点续传） ----------------
+
+    @Test
+    fun onlyPartialContentIsAppendedToWhatIsAlreadyOnDisk() {
+        assertTrue(ApkDownloader.canAppend(206, 4096L))
+    }
+
+    @Test
+    fun aFullBodyRethrownAtAResumeRequestRestartsInstead() {
+        // GitHub's CDN answers 200 with the whole file when it does not honour
+        // Range; appending that to the part file is a corrupt APK.
+        assertFalse(ApkDownloader.canAppend(200, 4096L))
+    }
+
+    @Test
+    fun anOutOfRangeOffsetRestarts() {
+        // 416 means the part file is longer than the asset - it belongs to an
+        // older release, so its bytes must not be kept.
+        assertFalse(ApkDownloader.canAppend(416, 20_000_000L))
+    }
+
+    @Test
+    fun nothingToResumeMeansNoAppendEvenOnAPartialResponse() {
+        assertFalse(ApkDownloader.canAppend(206, 0L))
+    }
 }

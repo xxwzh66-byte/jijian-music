@@ -49,8 +49,12 @@ plugins {
 // V1.1.7: 更新不再跳浏览器。检查到新版本后由应用自己把 APK 流式下到缓存、
 // 对 GitHub 公布的 digest 校验通过，再交给系统安装器；设置页那批「同时决定首页
 // 接着听有没有内容」式的说明文字一并删掉。包名与签名不变，可从 1.1.6 覆盖安装。
-ext.appVersionCode = 12
-ext.appVersionName = "1.1.7"
+// V1.1.8: 两条都是「安装包本身」的事。release 首次开 R8（先只 shrink+optimize，
+// 不改名）——此前所有构建都带着整片没调用的库代码；下载改成可续传，断在隧道里
+// 重试只补缺的那几 MB，且服务端不认 Range 时宁可重下也不拼出坏包。
+// 包名与签名不变，可从 1.1.7 覆盖安装。
+ext.appVersionCode = 13
+ext.appVersionName = "1.1.8"
 
 android {
     namespace = "com.lxmusic.android"
@@ -112,7 +116,12 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            // V1.1.8: 13.7 MB 的 dex 里绝大多数是没被调用的库分支，之前一直
+            // 关着 R8。开启后先只做 shrink + optimize，不改名（proguard-rules
+            // 里 -dontobfuscate）：体积收益几乎全在「删掉没用的类」上，而改名
+            // 只会给 Gson / Room / media3 这些靠反射找名字的地方添风险。
+            minifyEnabled true
+            shrinkResources true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
         }

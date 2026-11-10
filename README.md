@@ -1,6 +1,6 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.1.6** (`versionCode = 11`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.1.8** (`versionCode = 13`)
 
 一个从 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的
 音源架构出发、已经转型为**纯本地极简音乐播放器**的 Android 应用。
@@ -98,7 +98,7 @@ app/src/main/java/com/lxmusic/android/
 │   └── EmbeddedLyrics.kt        # ID3 / FLAC / Ogg / MP4 tag reader
 ├── net/
 │   ├── HttpBridge.kt            # OkHttp wrapper
-│   ├── ApkDownloader.kt         # V1.1.7: streaming APK download + sha256 digest check
+│   ├── ApkDownloader.kt         # V1.1.7: streaming download; V1.1.8: Range resume + digest check
 │   └── UpdateChecker.kt         # V1.0.2: GitHub Releases latest -> UpdateInfo
 ├── update/
 │   └── UpdateInstaller.kt       # V1.1.7: FileProvider -> system package installer
@@ -291,11 +291,11 @@ on your device. Respect copyright and the laws of your jurisdiction.
 ./gradlew :app:testDebugUnitTest
 ```
 
-289 unit tests across 30 classes, all green (run `./gradlew :app:testDebugUnitTest`):
+293 unit tests across 30 classes, all green (run `./gradlew :app:testDebugUnitTest`):
 
 | Test class | Cases | Covers |
 |---|---:|---|
-| `net/ApkDownloaderTest` | 12 | **V1.1.7**: `fileNameFor` refuses path traversal (`../../etc/app.apk` → `app.apk`) and always yields one `.apk`; `fraction` clamps over-run to 1f and returns 0f on an unknown total; `digestMatches` passes without a published digest, fails on a published digest with an unreadable file, and accepts bare hex as well as `sha256:` |
+| `net/ApkDownloaderTest` | 16 | **V1.1.7**: `fileNameFor` refuses path traversal (`../../etc/app.apk` → `app.apk`) and always yields one `.apk`; `fraction` clamps over-run to 1f and returns 0f on an unknown total; `digestMatches` passes without a published digest, fails on a published digest with an unreadable file, and accepts bare hex as well as `sha256:`. **V1.1.8**: `canAppend` only resumes on `206` with bytes already on disk — a `200` (CDN ignored `Range`) or `416` (the `.part` is longer than the asset) restarts from zero |
 | `data/backup/BackupCodecTest` | 15 | **V1.1.6**: fingerprint ignores case/whitespace/sub-second drift, exact id wins over fingerprint, duplicates take the first local track, `report` splits exact / matched / missing, JSON round-trip, unknown future version and garbage rejected, zip **and** bare-JSON containers |
 | `data/stats/AnnualReportTest` | 10 | **V1.1.6**: year window is closed at both ends (future-stamped events from a restore cannot leak in), duration sums every play, blank singer collapses to 未知歌手, top artist/track tie-breaking, empty year returns a report instead of throwing |
 | `ui/shell/RouteStackTest` | 11 | **V1.1.6**: reopening a route is a no-op, two group routes with different keys coexist, `close` works out of order, `closeTop` follows the draw order not the open order, group kind derived from the `album:`/`artist:` prefix |
@@ -333,6 +333,63 @@ explains the root causes behind them.
 `NeonTokensTest` is the same idea for the visual layer: it recomputes WCAG
 contrast over the *brightest possible* aurora composite on every palette, so a
 future "make it pop more" tweak cannot silently drop body text below AA.
+
+---
+
+## V1.1.8 — The APK loses four fifths of its weight, and a dropped download resumes (`versionCode = 13`)
+
+### 15.15 MB → 3.38 MB
+
+Measured before touching anything: dex was **13.66 MB of a 15.15 MB APK (90.2%)**,
+across three dex files whose raw size summed to 48.37 MB. `minifyEnabled false`
+plus `shrinkResources` off meant every bundled library shipped whole, including
+the large parts no code path ever called.
+
+Release builds now run R8 (`minifyReleaseWithR8`, `shrinkReleaseRes`,
+`optimizeReleaseResources`) and land at **3,543,104 B — a 77.7% cut**. What is
+left is one `classes.dex` (raw 5.36 MB), `resources.arsc` at 11.2% and `res` at
+8.3% (607 entries, down from 877).
+
+`proguard-rules.pro` opens with `-dontobfuscate` on purpose. The weight was
+dead code, not long names — deleting it is enough. Renaming would additionally
+have to satisfy four separate reflection contracts (Gson field names, Room's
+generated `*_Impl`, media3's `SessionToken` carrying a `ComponentName`, Compose's
+`$default` synthetics), and a mistake there is a crash on a user's phone, not a
+failing test. Obfuscation stays for a release that can be regression-tested on
+hardware.
+
+What is kept explicitly: the JSON-backed models (their field names *are* the
+`.jjmbackup` format — rename one and an old backup silently restores as nulls),
+`AppDatabase`/`AppDatabase_Impl`, `PlaybackService`, `UpdateInstaller`, `LxApp`,
+`MainActivity`, `FileProvider`, and media3's session/exoplayer entry points.
+
+`_r8check.py` verifies this without a device: it dumps class descriptors out of
+the packaged dex and asserts all eleven reflection-only classes survive, then
+greps the dex string pool for `albumName` / `localDurationMs` / `apkDigest` /
+`playedAt` / `trackIds` to prove the Gson protocol is intact.
+
+### A cancelled download is now a resume point
+
+`ApkDownloader.download` starts from whatever the `.part` file already holds and
+sends `Range: bytes=$carried-`. The response is only appended when
+`canAppend(statusCode, carried)` holds — `206` *and* something on disk. A `200`
+means the CDN ignored the range and is resending the whole body; a `416` means
+the `.part` is longer than the published asset (a stale file from an older
+build). Both wipe and restart rather than splice, because a spliced APK fails at
+install time and nowhere earlier.
+
+`total` is `carried + declared`, since a `206` reports only the remaining
+length; the download is only promoted to the final name once the byte count
+matches.
+
+`UpdateStore.purgeApkDir(keepName, keepPart)` now deletes only *other* versions'
+files, so cancelling keeps this asset's `.part`. Cancelling a 15 MB download to
+save 8 MB of cache was never the right trade.
+
+### Upgrade note
+
+Same package, same signing key — installs over 1.1.7 directly. The APK is
+smaller, not different.
 
 ---
 

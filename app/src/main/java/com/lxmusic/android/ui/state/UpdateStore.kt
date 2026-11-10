@@ -127,11 +127,13 @@ class UpdateStore(
         installJob?.cancel()
         installJob = scope.launch {
             val stored = withContext(Dispatchers.IO) {
-                // Clear leftovers from a previous attempt: a stale APK of an
-                // older version sitting in the cache is one more thing that can
-                // be installed by mistake.
-                purgeApkDir()
-                val dest = File(apkDir(), ApkDownloader.fileNameFor(info.apkName))
+                val keep = ApkDownloader.fileNameFor(info.apkName)
+                // Remove installers belonging to other versions - a stale APK of
+                // an older release sitting in the cache is one more thing that
+                // can be run by mistake - while keeping this asset's own
+                // `<name>.part`, which is where a dropped transfer resumes from.
+                purgeApkDir(keepName = keep, keepPart = true)
+                val dest = File(apkDir(), keep)
 
                 val download = downloader().download(url, dest) { written, total ->
                     _install.value = _install.value.copy(
@@ -190,8 +192,10 @@ class UpdateStore(
         if (_install.value.status == InstallStatus.IDLE) return
         installJob?.cancel()
         installJob = null
-        scope.launch(Dispatchers.IO) { purgeApkDir() }
         installSeq += 1
+        // Deliberately leaves the `.part` file alone: it is the resume point if
+        // the user changes their mind. A cancelled download costing a few MB of
+        // cache is cheaper than a cancelled download costing all fifteen.
         _install.value = UpdateInstallState(seq = installSeq)
     }
 
@@ -202,11 +206,22 @@ class UpdateStore(
     }
 
     /** Deletes every file this store ever put in [apkDir]; safe to call twice. */
-    private fun purgeApkDir() {
+    private fun purgeApkDir(keepName: String? = null, keepPart: Boolean = false) {
         runCatching {
             val dir = apkDir()
             dir.mkdirs()
-            dir.listFiles()?.forEach { if (it.isFile) it.delete() }
+            dir.listFiles()?.forEach { f ->
+                if (!f.isFile) return@forEach
+                if (keepName != null) {
+                    // The finished package and its `.part` sibling are the
+                    // in-progress download for the version we are about to
+                    // fetch; deleting them would turn every retry into a full
+                    // re-download, which is the whole point of V1.1.8.
+                    if (f.name == keepName) return@forEach
+                    if (keepPart && f.name == "$keepName.part") return@forEach
+                }
+                f.delete()
+            }
         }
     }
 

@@ -1,9 +1,9 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 11 / versionName "1.1.6"**
-> 报告版本：**V1.1.6**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 80 个 .kt；`app/src/test/java` 29 个 .kt / **273 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.1.6-vc11.apk`（release 签名，字节数以 build/apk 实测为准）
+> 交接版本：**versionCode 13 / versionName "1.1.8"**
+> 报告版本：**V1.1.8**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 81 个 .kt；`app/src/test/java` 30 个 .kt / **293 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.1.8-vc13.apk`（release 签名，**3.38 MB**，字节数以 build/apk 实测为准）
 
 ---
 
@@ -524,13 +524,15 @@ V1.0 的修法只补了一半。
 
 ## 十、测试
 
-**273 项 / 29 个测试类 / 0 失败**（V1.1.6 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
+**293 项 / 30 个测试类 / 0 失败**（V1.1.8 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
 **不需要设备**。
 
 > **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类；V1.1.1/1.1.2 → 235 项 / 26 类；V1.1.3 → 230 项 / 26 类；V1.1.4 → 229 项 / 26 类（删访问令牌 2 项、加自动检查 1 项）**（`PlayHistoryTest` 9 项随
 > `PlayHistory.kt` 删除，新增 `QueueMirrorTest` 17 项，四个 shuffle 测试类按抽签语义重写）。
 > **V1.1.5 → 237 项 / 26 类；V1.1.6 → 273 项 / 29 类**（新增 `BackupCodecTest` 15、`RouteStackTest` 11、
-> `AnnualReportTest` 10；`SettingsRoundTripTest` 11 → 10）。
+> `AnnualReportTest` 10；`SettingsRoundTripTest` 11 → 10）；**V1.1.7 → 289 项 / 30 类**
+> （新增 `ApkDownloaderTest` 12）；**V1.1.8 → 293 项 / 30 类**（`ApkDownloaderTest` 12 → 16，
+> 新增 4 个 `canAppend` 续传判定用例）。
 > V1.0 之前的基线（144/17 → 214/25）见 `git log`。
 
 | 测试类 | 项数 | 覆盖 |
@@ -611,11 +613,11 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 
 - [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\02_开发工具链\android-sdk` 存在
 - [ ] 确认 `subst X: "D:\demo\01_项目代码"` 已生效（否则 Kotlin 编译守护进程会崩，见第二节）
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 289 测试 0 失败
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 293 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.7-vc12.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.8-vc13.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---
@@ -786,6 +788,79 @@ meta-data 指 `@xml/update_paths`（`<cache-path name="updates" path="updates/" 
 
 **留下的**：`"已授权 N 个文件夹 · 已手动添加 N 首"`（是数据不是解释）、
 `updateSubtitle` 的非 IDLE 状态（是结果不是解释）。
+
+---
+
+## 十六、V1.1.8 设计与架构记录
+
+主题是「安装包瘦身」和「下载被打断要能续」。两条都带实测数据，没有一条是猜的。
+
+### 1. R8：15.15 MB → 3.38 MB（-77.7%）
+
+**先量再改**。`_size.py` 按 dex / res / assets / lib / META-INF 分组统计压缩后体积，
+V1.1.7 的 release 包构成是：
+
+| 分组 | 压缩后 | 占比 |
+|---|---:|---:|
+| dex | 13.66 MB（3 个 dex，raw 合计 48.37 MB） | **90.2%** |
+| resources.arsc | 832.41 KB | 5.4% |
+| res | 395.06 KB | 2.5% |
+
+九成体积在 dex 里，而 `app/build.gradle` 的 release 块同时写着
+`minifyEnabled false` 且没开 `shrinkResources`——每一份打进包的库都是完整的，
+包括大量从未被任何代码路径调用的部分。这就是全部原因。
+
+打开 R8（`minifyEnabled true` + `shrinkResources true`）后得到 **3,543,104 B**：
+
+| 分组 | 压缩后 | 占比 |
+|---|---:|---:|
+| dex | 2.45 MB（单文件，raw 5.36 MB） | 72.6% |
+| resources.arsc | 386.58 KB | 11.2% |
+| res | 287.62 KB（607 条目，原 877） | 8.3% |
+
+**`-dontobfuscate` 是刻意留的**，理由写在 `proguard-rules.pro` 开头：这次的体积来自
+死代码，删掉就够；改名则要同时满足四套反射约定——Gson（JSON 字段名即协议）、
+Room（运行时按名字找生成的 `*_Impl`）、media3（`SessionToken` 里塞 `ComponentName`）、
+Compose（`$default` 合成方法）——任何一处出错都是用户手机上的崩溃，而不是一条失败的
+测试。改名留到能做真机回归的版本再单开。
+
+显式 keep 的清单：`data.model.**` 与 `BackupFile`/`BackupPlaylist`/`BackupHistoryRow`/
+`BackupEventRow`/`EqProfile`（字段名就是 `.jjmbackup` 格式，改名会让旧备份静默恢复成
+null）、`AppDatabase`/`AppDatabase_Impl`、`PlaybackService`、`UpdateInstaller`、
+`LxApp`、`MainActivity`、`FileProvider`、media3 的 session/exoplayer 入口点。
+
+**怎么在没有设备的情况下确信没删错**：`_r8check.py` 用
+`build-tools/34.0.0/dexdump.exe -f` 把打进包的 dex 里的类描述符全列出来
+（5523 个），断言 11 个「只能靠反射或系统绑定找到」的类都在；然后用 `-d` 查
+dex 字符串池里的 `albumName` / `localDurationMs` / `dateAdded` / `songmid` /
+`apkDigest` / `playedAt` / `trackIds`，证明 Gson 协议没被改名。
+`aapt2 dump badging` 再确认 `versionCode='13' versionName='1.1.8'`、
+`launchable-activity` 仍是 `com.lxmusic.android.MainActivity`、
+应用名仍是「极简music」（图标资源被 shrink 改名成 `res/BW.xml` 是正常的）。
+
+### 2. 断点续传（`net/ApkDownloader.kt`）
+
+`download` 现在从 `.part` 文件已有的长度起步，发 `Range: bytes=$carried-`。
+
+**只有 `206` 且磁盘上有字节才追加**（`canAppend(statusCode, carried)`）。三条否决：
+
+- `200` —— CDN 忽略了 Range，正在整包重发。追加等于把整个 APK 拼两遍。
+- `416` —— `.part` 比发布资产还长，是旧版本留下的垃圾。
+- `carried == 0` —— 没什么可续的，走普通下载。
+
+否决时 `part.delete()` 再从头取。宁可多下一次，也不拼一个只在安装时才失败、
+之前任何一步都不报错的坏包。四条对应单测
+（`onlyPartialContentIsAppendedToWhatIsAlreadyOnDisk` /
+`aFullBodyRethrownAtAResumeRequestRestartsInstead` /
+`anOutOfRangeOffsetRestarts` /
+`nothingToResumeMeansNoAppendEvenOnAPartialResponse`）把这四种情况钉死。
+
+`total = carried + declared`——`206` 的 `Content-Length` 只报剩余长度，
+直接用会让进度条从 0 开始跳。字节数对上才 `renameTo(dest)`。
+
+**取消不该丢掉进度**。`UpdateStore.purgeApkDir(keepName, keepPart)` 只删「别的版本」
+的文件，`cancelInstall()` 不再清空整个缓存目录——本资产的 `.part` 留着当续传点。
+取消一次花掉几 MB 缓存，比下次从零下 15 MB 划算。
 
 ---
 
