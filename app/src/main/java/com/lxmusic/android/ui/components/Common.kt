@@ -36,30 +36,41 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import com.lxmusic.android.data.model.MusicInfo
 import com.lxmusic.android.data.settings.ListStyle
 import com.lxmusic.android.data.settings.SettingsStore
 import com.lxmusic.android.ui.neon.NeonTiming
 import com.lxmusic.android.ui.theme.OledTokens
 
-/** Rounded album art with a music-note fallback. */
+/**
+ * Rounded album art with a music-note fallback.
+ *
+ * The decode size is pinned to [CoverTier] rather than left to Coil's layout
+ * inference: an embedded picture is often 1000×1000, and a list of forty such
+ * rows would decode 160 MB of bitmaps to fill 52 dp squares.
+ */
 @Composable
 fun Cover(url: String?, size: Dp, modifier: Modifier = Modifier) {
+    val density = LocalDensity.current.density
+    val context = LocalContext.current
     Box(
         modifier.size(size).clip(RoundedCornerShape(OledTokens.radiusSm))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
         if (!url.isNullOrBlank()) {
+            val px = CoverTier.pixels(sizeDp = size.value.toInt(), density = density)
             // V1.1.5: a stored path can still fail to decode (moved file, stale
             // cacheDir/covers entry, albumart row deleted under us). Without this
             // the box just stayed empty; the fallback icon is the honest answer.
             SubcomposeAsyncImage(
-                model = url,
+                model = ImageRequest.Builder(context).data(url).size(px).build(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),

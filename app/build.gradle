@@ -53,8 +53,13 @@ plugins {
 // 不改名）——此前所有构建都带着整片没调用的库代码；下载改成可续传，断在隧道里
 // 重试只补缺的那几 MB，且服务端不认 Range 时宁可重下也不拼出坏包。
 // 包名与签名不变，可从 1.1.7 覆盖安装。
-ext.appVersionCode = 13
-ext.appVersionName = "1.1.8"
+// V1.2.0: 四件事都只改「已经算过的东西别重算」。扫描按 (lastModified, size)
+// 双标复用缓存条目，跳过没变的文件；搜索把曲目名/歌手/专辑在小写态建一次索引，
+// 每次按键不再对全库 lowercase；封面按显示尺寸分级请求像素，不再把 1000×1000
+// 的内嵌图整张解码成 4 MB 位图；队列头部给出「3/12 · 剩 34 分」，并支持长按拖动
+// 排序。包名与签名不变，可从 1.1.8 覆盖安装。
+ext.appVersionCode = 14
+ext.appVersionName = "1.2.0"
 
 android {
     namespace = "com.lxmusic.android"

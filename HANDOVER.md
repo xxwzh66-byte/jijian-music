@@ -1,9 +1,10 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 13 / versionName "1.1.8"**
-> 报告版本：**V1.1.8**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 81 个 .kt；`app/src/test/java` 30 个 .kt / **293 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.1.8-vc13.apk`（release 签名，**3.38 MB**，字节数以 build/apk 实测为准）
+> 交接版本：**versionCode 14 / versionName "1.2.0"**
+> 报告版本：**V1.2.0**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 88 个 .kt；`app/src/test/java` 36 个 .kt / **350 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.2.0-vc14.apk`（release 签名，**3,543,112 B**；
+> SHA-256 `72e69d7e04f98584d6756c63921f4dd6928f112fe3f3d14d2a3a77e0f6f4a8f5`）
 
 ---
 
@@ -27,6 +28,9 @@
   （`ui/shell/Route.kt`，`Group(key)` 是第一个带参数的页面）；`MainViewModel`
   887 → 508 行，降级成五个 store 的门面（`ui/state/`）；专辑/歌手有了自己的页面；
   新增 `.jjmbackup` 备份恢复与「这一年」年度回顾。见第十四节
+- **V1.2 性能**：四件事都只做「已经算过的东西别重算」——扫描按 `(mtime, size)`
+  双标复用缓存、搜索对全库只 lowercase 一次、封面按显示尺寸分级解码、队列头部
+  给出「3/12 · 剩 34 分」并支持长按拖动排序。见第十六节
 - **V1.0.1 耳机按键修复**：media3 的 `seekToPrevious()` 有两条路会变成「重播当前曲」——
   位置超过 `getMaxSeekToPreviousPosition()`（默认 3s），或 `getPreviousIndex()` 返回
   `-1`。V1.0 只关了前者；V1.0.1 让抽签**永不返回 -1**，把后者也堵掉。
@@ -524,7 +528,7 @@ V1.0 的修法只补了一半。
 
 ## 十、测试
 
-**293 项 / 30 个测试类 / 0 失败**（V1.1.8 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
+**350 项 / 36 个测试类 / 0 失败**（V1.2.0 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
 **不需要设备**。
 
 > **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类；V1.1.1/1.1.2 → 235 项 / 26 类；V1.1.3 → 230 项 / 26 类；V1.1.4 → 229 项 / 26 类（删访问令牌 2 项、加自动检查 1 项）**（`PlayHistoryTest` 9 项随
@@ -532,7 +536,9 @@ V1.0 的修法只补了一半。
 > **V1.1.5 → 237 项 / 26 类；V1.1.6 → 273 项 / 29 类**（新增 `BackupCodecTest` 15、`RouteStackTest` 11、
 > `AnnualReportTest` 10；`SettingsRoundTripTest` 11 → 10）；**V1.1.7 → 289 项 / 30 类**
 > （新增 `ApkDownloaderTest` 12）；**V1.1.8 → 293 项 / 30 类**（`ApkDownloaderTest` 12 → 16，
-> 新增 4 个 `canAppend` 续传判定用例）。
+> 新增 4 个 `canAppend` 续传判定用例）；**V1.2.0 → 350 项 / 36 类**
+> （新增 `LocalIndexTest` 10、`IncrementalScanTest` 8、`ScanReportTest` 5、
+> `CoverTierTest` 9、`QueueSummaryTest` 12、`QueueDragTest` 13）。
 > V1.0 之前的基线（144/17 → 214/25）见 `git log`。
 
 | 测试类 | 项数 | 覆盖 |
@@ -541,6 +547,12 @@ V1.0 的修法只补了一半。
 | `PlayStatsTest` | 17 | 日/周分桶、排行、时区（固定 `Asia/Shanghai`） |
 | `RandomShuffleStateTest` | 18 | **V1.0.1 抽签契约**：next 排除当前曲、prev 同样排除且额外避开刚播完的那首、一次抽签在下一首开始前反复问答案不变、`onTrackStarted` 清空缓存、2 首队列两个方向都能换 |
 | `LocalLibraryTest` | 15 | 分组、搜索、排序 |
+| `QueueSummaryTest` | 12 | **V1.2**：位置从 1 起算、`remaining` 只数当前曲之后的曲目而 `remainingSeconds` 含当前曲剩余、过期 position 被夹到本曲长度、分钟取整会跨进小时 |
+| `QueueDragTest` | 13 | **V1.2**：半行在**两个方向**都进位（`roundToInt` 把 -0.5 取 0，朴素写法会让向上拖慢半行）、落点夹紧队列而浮动偏移保留全程、被跨过的行反向让位一格、起点越界与零行高都是空操作 |
+| `LocalIndexTest` | 10 | **V1.2**：索引对每个查询都答出与 `LocalLibrary.search` 相同的曲目（逐查询比对而非手挑断言）、空白查询按引用返回已排序列表、排序在过滤后保持、分组跑在索引子集上 |
+| `CoverTierTest` | 9 | **V1.2**：72/200 dp 的档位边界、请求像素**向上**取整（向下会让 Coil 在最后一行把位图放大回去）、上限按档位分组、零尺寸永不传给 Coil（在 Coil 里 0 表示「按原图」） |
+| `IncrementalScanTest` | 8 | **V1.2**：只有 `lastModified` 与 `size` **同时**匹配才复用——只信时间戳会在同秒原地重写后留下旧时长，而 provider 报 0 是「没有信息」不是「没变」 |
+| `ScanReportTest` | 5 | **V1.2**：真跑过扫描才有 `hasRun`、总数为 0 时 `reusedFraction` 不炸、超过 1000 ms 才切到秒 |
 | `QueueMirrorTest` | 17 | **V1.0.1**：镜像 playlist 的五步按固定顺序执行、`move`/`remove` 在播放器改动**之后**才丢弃已装 order、`replace` 拒绝无法镜像的队列 |
 | `QueueLogicTest` | 8 | 队列 `move`/`remove` 纯逻辑（`nextIndex`/`prevIndex` 与它们的 4 个用例 V1.1.3 删除） |
 | `RandomShuffleOrderTest` | 11 | **V1.0.1** `ShuffleOrder` 契约：prev 恒答一个合法且不等于当前的下标，克隆体继续从同一份 state 抽 |
@@ -613,11 +625,11 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 
 - [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\02_开发工具链\android-sdk` 存在
 - [ ] 确认 `subst X: "D:\demo\01_项目代码"` 已生效（否则 Kotlin 编译守护进程会崩，见第二节）
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 293 测试 0 失败
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 350 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.1.8-vc13.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.2.0-vc14.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---
@@ -629,10 +641,10 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 bash /d/demo/_bx.sh :app:assembleDebug :app:versionedApk :app:testDebugUnitTest
 
 # 看 APK 版本（别只看字节数：1.1.3/1.1.4/1.1.5 的 release 包都恰好是 16,098,025 B）
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.1.6-vc11.apk | grep versionCode
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.2.0-vc14.apk | grep versionCode
 
 # 验签
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.1.6-vc11.apk
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.2.0-vc14.apk
 
 # 重新生成搜索 bundle
 cd D:\demo\lx-builder; node build.mjs
@@ -863,5 +875,86 @@ dex 字符串池里的 `albumName` / `localDurationMs` / `dateAdded` / `songmid`
 取消一次花掉几 MB 缓存，比下次从零下 15 MB 划算。
 
 ---
+
+---
+
+## 十七、V1.2.0 设计与架构记录
+
+这一版没有新功能，只有四件「已经算过的东西又算了一遍」的修正。四个改动都遵循
+同一条判据：**昂贵的部分必须能证明自己变了**，否则就用上次的结果。
+
+### 1. 增量扫描（`local/IncrementalScan.kt`）
+
+扫描真正的开销不在遍历目录树，而在 `MediaMetadataRetriever` 逐文件打开读标签与
+时长。SAF 的列表查询本来就会给出 `lastModified` 与 `length`，于是把它们做成
+`Stamp(lastModified, size)` 与缓存比对，命中就直接复用上一轮的 `MusicInfo`。
+
+两条判定都是**与**，不是**或**：
+
+- **两个数都必须匹配**。同一秒内原地重写只改长度；只信 mtime 会把旧时长留在库里。
+- **两个数都必须存在**。provider 报 `0` 是「这条记录没有这个信息」，不是「没变化」。
+  把 0 当有效值会让「读不到」等价于「没改」，下一轮永远复用一条不完整的记录。
+
+`ScanReport(total, reused, read, elapsedMs)` 把结果落到 UI：文件夹管理页在扫完后
+显示 `共 N 首 · 用时 X · 跳过 M 首未改动`。**这条汇总本身就是这次改动的验收标准**
+——没有它，「跳过」只是一个不可观测的内部优化。
+
+### 2. 搜索索引（`local/LocalIndex.kt`）
+
+`LocalLibrary.search` 每次调用都对全库每首曲目的 name/singer/albumName 各做一次
+`lowercase()`，而 UI 在**每次按键**都调用它。三千首的库、每个字符三万个字符串
+分配，全部是在重算两次按键之间根本没变的文本。
+
+`LocalIndex.of(tracks, order)` 在曲目列表变化时做一次小写化，并把排序也一并做掉
+（排序只在用户切换排序方式时变，查询每个字符都在变）。`MediaLibraryStore.indexFor`
+把索引挂在**它被构造时的两个值**上做缓存：列表用引用相等（store 是整体替换
+`copy(allTracks = ...)`，新对象必是新内容）、排序枚举用值相等。这样「索引过期」
+不是「不太可能」，而是**不可能**——缓存键就是它的全部输入。
+
+`LocalIndexTest` 的关键用例是 `theIndexAgreesWithThePlainFilterForEveryQuery`：
+拿一批查询逐个比对索引答案与旧 `LocalLibrary.search` 的答案。这里真正的风险不是
+性能没提上去，而是**行为悄悄变了**，所以测试断言的是等价性而不是某几个字符串。
+
+### 3. 封面分级（`ui/components/CoverTier.kt`）
+
+内嵌封面常见 1000×1000。Coil 按 ARGB_8888 解码就是 4 MB；四十行列表各解码一张，
+为了填 52 dp 的方块，churn 掉 160 MB。
+
+Coil 本身会从布局约束推断目标尺寸，所以显眼的情况本来就没问题。它不知道的是
+**策略**：播放页那张铺满全屏、压在极光上、只有 12% alpha 的底衬，同样不需要原图
+分辨率。于是三档上限被显式命名（THUMB 160 / TILE 320 / LARGE 1080），`Cover()`
+按 `ceil(sizeDp × density)` 夹进档位。
+
+两个细节是刻意写反直觉的：
+
+- **向上取整**。向下取整会让 Coil 在最后一行把解码好的位图再放大回去，看起来是糊的。
+- **零尺寸绝不传下去**。对 Coil 来说 `size(0)` 表示「不定尺寸」，也就是按原图解码
+  ——正好是这套策略要消除的那件事。所以 `pixels()` 的下界是 1。
+
+### 4. 队列 2.0（`player/QueueDrag.kt` + `ui/screens/QueueScreen.kt`）
+
+头部文案是 `3/12 · 剩 34 分`。`QueueSummary` 从队列 + **当前曲内的播放进度**算出
+这个数，所以它在一首歌里平滑下降，而不是按整首跳。
+
+有一个刻意的取舍：**不把「剩 N 首」和时长并排**。首数不含当前曲，时长含当前曲的
+剩余部分，并排就会出现「剩 1 首 · 5 分」这种自相矛盾的读法。首数由下方的行列表
+本身回答，头部只留「还要多久」。
+
+拖动排序：长按拾起，落点由 `QueueDrag.resolve` 按累计位移算，被跨过的行反向让位
+一格（`displacementFor`），松手时调一次 `queueMove`。两个坑：
+
+- `roundToInt` 用的是 `Math.round`，对 `-0.5` 取 0、对 `+0.5` 取 1。直接套会让
+  **向上拖比向下拖迟钝半行**，所以先取绝对值再补符号。
+- 浮动偏移保留**全程**距离，即使落点已经被夹在队列边界——行必须始终跟在手指下，
+  否则拖到顶还会继续飘，看起来像松手了。
+
+### 5. 这一版没有做的事
+
+- 没有把 `LocalIndex` 做成可观察对象。它是 store 整体替换的一个值，这样「什么时候
+  会过期」只有一个答案。
+- 没有给拖动手势加自动滚动。队列通常是几十首，屏幕外拖动需要边缘滚动区，那是
+  另一个量级的手势逻辑，留到有人真的抱怨再说。
+- 没有打开 R8 的改名。理由同 V1.1.8：收益在删代码，不在改名，而改名要同时说服
+  Gson / Room / media3 / Compose 四套反射约定。
 
 *本报告由当前代码库实况生成，所有文件体积、行号、测试数均为实测值。*

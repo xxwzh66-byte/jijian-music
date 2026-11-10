@@ -30,9 +30,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate as scopeRotate
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import androidx.compose.animation.core.animateFloatAsState
 
 private const val FULL_TURN_MS = 4000
@@ -132,8 +134,13 @@ fun RotatingArtwork(
                 }
             } else {
                 // Album art, inset like a printed centre label (I4: 1:1 crop).
+                // 唱片中心只有 0.62 倍直径，按 TILE 上限取像素就够；
+                // 原图通常是 1000×1000，全解码是纯浪费。
                 AsyncImage(
-                    model = imageUrl,
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(imageUrl)
+                        .size(CoverTier.TILE.maxPx)
+                        .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier

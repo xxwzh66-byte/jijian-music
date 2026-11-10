@@ -54,15 +54,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.lxmusic.android.player.PlayerState
 import com.lxmusic.android.player.RepeatMode
 import com.lxmusic.android.ui.components.ArtworkColors
+import com.lxmusic.android.ui.components.CoverTier
 import com.lxmusic.android.ui.components.LyricView
 import com.lxmusic.android.ui.components.PlayerSkin
 import com.lxmusic.android.ui.components.RotatingArtwork
@@ -136,8 +139,9 @@ fun NowPlayingScreen(
 
         // 正在播放的封面以极低 alpha 叠在极光上：给"这首歌"一点实体感，
         // 又不会像旧版那样占据整屏。
+        // 12% alpha 之下看不出分辨率差别，所以按 LARGE 的上限取像素。
         AsyncImage(
-            model = state.current?.img,
+            model = coverModel(state.current?.img, CoverTier.LARGE, context),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             alpha = NeonTokens.STAGE_COVER_ALPHA,
@@ -402,6 +406,7 @@ private fun LyricsStage(
     onSeek: (Long) -> Unit,
     themeColor: String,
 ) {
+    val context = LocalContext.current
     Box(Modifier.fillMaxSize()) {
         // 上下压暗，保证歌词在极光最亮处也读得清
         Box(
@@ -429,7 +434,7 @@ private fun LyricsStage(
         )
         if (!state.current?.img.isNullOrBlank()) {
             AsyncImage(
-                model = state.current?.img,
+                model = coverModel(state.current?.img, CoverTier.THUMB, context),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -563,4 +568,18 @@ private fun ControlBar(
             active = state.repeatMode != RepeatMode.OFF,
         )
     }
+}
+
+/**
+ * A cover request pinned to a decode size.
+ *
+ * 全屏底衬按 1080，chip 按 160：两者读的是同一张缓存文件，但解码出来的位图
+ * 差 45 倍。用 LARGE.maxPx 而不是「面积」，是因为 Coil 的 size 是边长。
+ */
+private fun coverModel(
+    url: String?,
+    tier: CoverTier,
+    context: android.content.Context,
+): ImageRequest? = url?.let {
+    ImageRequest.Builder(context).data(it).size(tier.maxPx).build()
 }

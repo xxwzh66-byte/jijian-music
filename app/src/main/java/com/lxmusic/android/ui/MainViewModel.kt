@@ -93,6 +93,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val local: StateFlow<LocalUiState> get() = libraryStore.local
     val library: StateFlow<LibraryUiState> get() = libraryStore.library
     val scanning: StateFlow<Boolean> get() = libraryStore.scanning
+    val lastScan: StateFlow<ScanReport> get() = libraryStore.lastScan
     val player: StateFlow<PlayerState> get() = playerUi.player
     val equalizer: StateFlow<EqualizerState> get() = playerUi.equalizer
     val stats: StateFlow<StatsUiState> get() = statsStore.stats

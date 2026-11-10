@@ -1,6 +1,6 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.1.8** (`versionCode = 13`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.2.0** (`versionCode = 14`)
 
 一个从 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的
 音源架构出发、已经转型为**纯本地极简音乐播放器**的 Android 应用。
@@ -90,6 +90,8 @@ app/src/main/java/com/lxmusic/android/
 │   ├── SafMusicScanner.kt       # SAF folder scan (T2)
 │   ├── LocalFileDeleter.kt      # file deletion (T4)
 │   ├── LocalLibrary.kt          # grouping / sorting / search / merge
+│   ├── LocalIndex.kt            # V1.2: pre-lowered search index (one lowercase pass)
+│   ├── IncrementalScan.kt       # V1.2: (mtime, size) stamp reuse policy
 │   └── LocalTrackMapper.kt      # entity <-> model
 ├── lyric/
 │   ├── Lyric.kt                 # Lyric model + LrcParser
@@ -113,6 +115,7 @@ app/src/main/java/com/lxmusic/android/
 │   ├── QueueIndex.kt            # media id -> queue slot resolution
 │   ├── StallWatchdog.kt         # silent-stall detection (pure Kotlin)
 │   ├── QueueLogic.kt            # queue move / remove pure functions
+│   ├── QueueDrag.kt             # V1.2: QueueSummary header numbers + drag-to-reorder math
 │   └── EqualizerController.kt   # audiofx wrapper (+ EqProfile replay on attach)
 ├── ui/
 │   ├── LxApp.kt                 # V1.1.3: shell wiring only, 200 lines
@@ -121,9 +124,11 @@ app/src/main/java/com/lxmusic/android/
 │   ├── shell/Route.kt           # V1.1.6: typed curtain stack (was 6 booleans)
 │   ├── state/                   # V1.1.6: MediaLibraryStore, PlayerUiStore, StatsStore,
 │   │                            #   UpdateStore, BackupStore (MainViewModel is a facade)
+│   │                            # V1.2: + ScanReport (what the last scan skipped)
 │   ├── MainViewModel.kt         # facade: forwards flows/methods to the stores
 │   ├── CrashReportDialog.kt     # previous-run crash trace, copy/clear
 │   ├── components/              # TrackRow, LyricView, RotatingArtwork, PlayerSkin, ArtworkColors, SearchBar, Hints
+│   │                            # V1.2: + CoverTier (decode-size policy)
 │   ├── neon/                    # Neon Vinyl design system: tokens, aurora, glass, controls, shell, NeonScreen scaffold
 │   ├── screens/                 # Local, Library, GroupDetail, NowPlaying, Queue, Equalizer, Stats, FolderManager, Settings
 │   └── theme/                   # OledTokens / ColorPalettes / Theme
@@ -291,10 +296,14 @@ on your device. Respect copyright and the laws of your jurisdiction.
 ./gradlew :app:testDebugUnitTest
 ```
 
-293 unit tests across 30 classes, all green (run `./gradlew :app:testDebugUnitTest`):
+350 unit tests across 36 classes, all green (run `./gradlew :app:testDebugUnitTest`):
 
 | Test class | Cases | Covers |
 |---|---:|---|
+| `local/LocalIndexTest` | 10 | **V1.2**: the index answers exactly what `LocalLibrary.search` answered for every query (compared case by case), blank queries return the sorted list by identity, sort order survives filtering, grouping runs off the indexed subset |
+| `player/QueueDragTest` | 13 | **V1.2**: half a row commits a slot in *both* directions (`roundToInt` rounds -0.5 to 0, so the naive form made upward drags feel half a row late), the target clamps to the queue while the float offset keeps the whole distance, rows the drag passed shift one slot the other way, out-of-range start and zero row height are inert |
+| `player/QueueSummaryTest` | 12 | **V1.2**: position is 1-based, `remaining` counts only tracks *after* the current one while `remainingSeconds` includes what is left of it, a stale position clamps to the current track's own length, minute rounding crosses into hours |
+| `ui/components/CoverTierTest` | 9 | **V1.2**: tier boundaries at 72/200 dp, requested pixels round *up* (down makes Coil scale the bitmap back up on the last row), the cap is per tier, and a zero size never reaches Coil (0 means "original size" there) |
 | `net/ApkDownloaderTest` | 16 | **V1.1.7**: `fileNameFor` refuses path traversal (`../../etc/app.apk` → `app.apk`) and always yields one `.apk`; `fraction` clamps over-run to 1f and returns 0f on an unknown total; `digestMatches` passes without a published digest, fails on a published digest with an unreadable file, and accepts bare hex as well as `sha256:`. **V1.1.8**: `canAppend` only resumes on `206` with bytes already on disk — a `200` (CDN ignored `Range`) or `416` (the `.part` is longer than the asset) restarts from zero |
 | `data/backup/BackupCodecTest` | 15 | **V1.1.6**: fingerprint ignores case/whitespace/sub-second drift, exact id wins over fingerprint, duplicates take the first local track, `report` splits exact / matched / missing, JSON round-trip, unknown future version and garbage rejected, zip **and** bare-JSON containers |
 | `data/stats/AnnualReportTest` | 10 | **V1.1.6**: year window is closed at both ends (future-stamped events from a restore cannot leak in), duration sums every play, blank singer collapses to 未知歌手, top artist/track tie-breaking, empty year returns a report instead of throwing |
@@ -319,6 +328,8 @@ on your device. Respect copyright and the laws of your jurisdiction.
 | `data/SettingsRoundTripTest` | 10 | every preference key is written and read back through the *same* key constant — the "equalizer does not survive a restart" class of bug cannot hide behind a default-only assertion; the V1.0.2 update token is checked the same way |
 | `net/UpdateCheckerTest` | 15 | **V1.0.2**: release-tag version comparison (leading `v`, numeric segments, prerelease suffix ordering) and GitHub release JSON parsing (title fallback, graceful degradation on missing fields) — no network in unit tests. **V1.1.7** adds four cases pinning asset choice: the release build wins when both APKs are published, debug remains usable when it is all there is, `apkUrl`/`apkDigest` are read off the *chosen* asset, and a release without a digest leaves it null |
 | `data/SettingsTest` | 4 | settings defaults (incl. flat EQ profile) / enum values |
+| `local/IncrementalScanTest` | 8 | **V1.2**: a cached stamp is reused only when *both* `lastModified` and `size` match — trusting the timestamp alone keeps a stale duration after an in-place rewrite, and a provider reporting 0 means "no information", not "unchanged" |
+| `ui/state/ScanReportTest` | 5 | **V1.2**: `hasRun` only after a real scan, `reusedFraction` survives a zero total, elapsed text switches to seconds past 1000 ms |
 | `local/SafMusicScannerTest` | 5 | audio extension / mime detection |
 | `player/QueueIndexTest` | 5 | a queue slot is only real if the *id* at that slot is the track playing — the online-queue `playIndex(3)` → reported-as-0 defect |
 | `player/RandomShuffleTest` | 6 | **V1.0.1**: `pickOther` always lands in range and never returns an excluded slot; uniformity over 600 seeds |
@@ -333,6 +344,52 @@ explains the root causes behind them.
 `NeonTokensTest` is the same idea for the visual layer: it recomputes WCAG
 contrast over the *brightest possible* aurora composite on every palette, so a
 future "make it pop more" tweak cannot silently drop body text below AA.
+
+---
+
+## V1.2.0 — Nothing that was already computed gets computed twice (`versionCode = 14`)
+
+Four changes, one theme: the app was redoing work it had already done.
+
+**Scanning reuses unchanged files.** The expensive part of a scan was never
+walking the tree — it was `MediaMetadataRetriever` opening every file to read
+tags and duration. The SAF listing already reports `lastModified` and `length`,
+so `IncrementalScan` compares a `(mtime, size)` stamp and falls back to the
+cached `MusicInfo` when both match. Both, not either: an in-place rewrite inside
+the same second only changes the length, so trusting the timestamp keeps a stale
+duration; and a provider reporting `0` means "no information", which is not the
+same as "unchanged". The folder screen now ends a scan with
+`共 128 首 · 用时 1.2 s · 跳过 121 首未改动` instead of silence.
+
+**Search pre-lowers the library.** `LocalLibrary.search` lowercased three fields
+of every track on every call, and the UI calls it on every keystroke — thousands
+of string allocations per typed character, all of it recomputing text that never
+changes between keystrokes. `LocalIndex` does the lowercasing once, when the
+track list changes, and applies the sort in the same pass. The store caches it
+behind the two values it was built from (reference equality on the list, value
+equality on the sort enum), so a stale index is impossible rather than merely
+unlikely. `LocalIndexTest` compares the index against the old filter for a spread
+of queries rather than asserting on hand-picked strings — the whole risk here is
+a silent behaviour change, and one test pins that.
+
+**Covers decode at the size they are drawn.** Embedded pictures are routinely
+1000×1000, which Coil decodes into a 4 MB bitmap — forty list rows of that is
+160 MB of churn to fill 52 dp squares. Coil already infers a target size from the
+layout constraints, but it cannot know the policy: that the full-bleed cover
+behind the lyrics sits at 12 % alpha and does not need its resolution either.
+`CoverTier` names three ceilings (160 / 320 / 1080 px) and `Cover()` asks for
+`ceil(sizeDp × density)` clamped into its tier. Rounding up is deliberate —
+rounding down makes Coil scale the decoded bitmap back up on the last row — and
+`0` is never passed through, because a zero-size request means "original size".
+
+**The queue says what is left, and can be reordered.** The header reads
+`3/12 · 剩 34 分`; `QueueSummary` computes that from the queue plus the position
+*inside* the current track, so the number shrinks while a song plays instead of
+dropping in whole-track steps. It does not print a track count next to the
+duration — the count excludes the current track while the duration includes its
+remaining part, and putting them side by side reads as a contradiction. Rows can
+also be dragged: long-press to pick one up, and the drop slot follows the finger
+(half a row commits, in both directions).
 
 ---
 

@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lxmusic.android.ui.MainViewModel
+import com.lxmusic.android.ui.state.ScanReport
 import com.lxmusic.android.ui.neon.NeonHairline
 import com.lxmusic.android.ui.neon.NeonScreen
 import com.lxmusic.android.ui.neon.NeonTokens
@@ -60,6 +61,7 @@ fun FolderManagerScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val settings by viewModel.settings.collectAsState()
     val scanning by viewModel.scanning.collectAsState()
+    val lastScan by viewModel.lastScan.collectAsState()
 
     val folderPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -124,6 +126,17 @@ fun FolderManagerScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                         Text("正在扫描…", style = MaterialTheme.typography.bodySmall)
                     }
+                }
+            } else if (lastScan.hasRun) {
+                // An incremental scan finishes fast and finds the same tracks,
+                // so say what it skipped — otherwise there is nothing to see.
+                item {
+                    Text(
+                        scanSummary(lastScan),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
                 }
             }
 
@@ -227,5 +240,18 @@ private fun EntryRow(
             onClick = onDelete,
             tint = MaterialTheme.colorScheme.error,
         )
+    }
+}
+
+/** One line for the last scan: what it kept, what it had to read, how long. */
+private fun scanSummary(r: ScanReport): String = buildString {
+    append("共 ")
+    append(r.total)
+    append(" 首 · 用时 ")
+    append(r.elapsedText)
+    if (r.reused > 0) {
+        append(" · 跳过 ")
+        append(r.reused)
+        append(" 首未改动")
     }
 }

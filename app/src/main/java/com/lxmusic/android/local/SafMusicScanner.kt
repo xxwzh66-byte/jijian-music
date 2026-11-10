@@ -54,28 +54,58 @@ class SafMusicScanner(private val context: Context) {
     /**
      * Scans every tree in [treeUris].
      *
+     * @param cached rows from the previous scan, keyed by [MusicInfo.id]. A row
+     *   whose file still carries the same lastModified/size is reused as-is
+     *   instead of re-reading its tags — see [IncrementalScan] for why both
+     *   numbers have to match.
      * @param onProgress called with the running track count so the UI can show progress.
+     * @param onReused called once per cached row that was reused, so the caller
+     *   can report "skipped N unchanged" rather than silently doing less work.
      */
     suspend fun scanFolders(
         treeUris: List<String>,
         readEmbeddedCover: Boolean = true,
+        cached: Map<String, MusicInfo> = emptyMap(),
         onProgress: (Int) -> Unit = {},
+        onReused: (Int) -> Unit = {},
     ): List<MusicInfo> = withContext(Dispatchers.IO) {
         val out = LinkedHashMap<String, MusicInfo>()
+        val reuse = ReuseTracker(cached, onReused)
         for (tree in treeUris) {
             coroutineContext.ensureActive()
             val uri = runCatching { Uri.parse(tree) }.getOrNull() ?: continue
             val root = runCatching { DocumentFile.fromTreeUri(context, uri) }.getOrNull() ?: continue
-            walk(root, "folder", readEmbeddedCover, out, onProgress)
+            walk(root, "folder", readEmbeddedCover, out, onProgress, reuse)
         }
         out.values.toList()
+    }
+
+    /**
+     * Counts cache hits so the scan can say what it skipped.
+     *
+     * Kept as a small mutable holder rather than a `var` in the call site
+     * because the recursion in [walk] needs the same counter at every depth.
+     */
+    private class ReuseTracker(
+        private val cached: Map<String, MusicInfo>,
+        private val onReused: (Int) -> Unit,
+    ) {
+        private var hits = 0
+
+        fun tryReuse(id: String, stamp: IncrementalScan.Stamp): MusicInfo? {
+            val row = cached[id] ?: return null
+            if (!IncrementalScan.isUnchanged(row.stampOrNull(), stamp)) return null
+            hits++
+            onReused(hits)
+            return row
+        }
     }
 
     /** Reads metadata for explicitly added single files (T3). */
     suspend fun readSingle(uri: Uri, readEmbeddedCover: Boolean = true): MusicInfo? =
         withContext(Dispatchers.IO) {
-            runCatching { readFile(DocumentFile.fromSingleUri(context, uri) ?: return@withContext null, uri.toString(), "manual", readEmbeddedCover) }
-                .getOrNull()
+            val file = DocumentFile.fromSingleUri(context, uri) ?: return@withContext null
+            runCatching { readFile(file, uri.toString(), "manual", readEmbeddedCover) }.getOrNull()
         }
 
     private suspend fun walk(
@@ -84,6 +114,7 @@ class SafMusicScanner(private val context: Context) {
         readEmbeddedCover: Boolean,
         out: MutableMap<String, MusicInfo>,
         onProgress: (Int) -> Unit,
+        reuse: ReuseTracker,
     ) {
         coroutineContext.ensureActive()
         val children = runCatching { dir.listFiles() }.getOrElse { return }
@@ -94,9 +125,16 @@ class SafMusicScanner(private val context: Context) {
             if (child.isDirectory) {
                 if (name in SKIP_DIRS) continue
                 if (File(name).name == ".nomedia") continue
-                walk(child, origin, readEmbeddedCover, out, onProgress)
+                walk(child, origin, readEmbeddedCover, out, onProgress, reuse)
             } else if (isAudioFile(name, child.type)) {
-                val info = runCatching { readFile(child, child.uri.toString(), origin, readEmbeddedCover) }.getOrNull()
+                val uriString = child.uri.toString()
+                val docId = documentIdOf(uriString)
+                val id = trackIdOf(docId)
+                // The listing already gave us mtime and size; only pay for
+                // MediaMetadataRetriever when those say the file changed.
+                val stamp = IncrementalScan.Stamp(child.lastModified(), child.length())
+                val info = reuse.tryReuse(id, stamp)
+                    ?: runCatching { readFile(child, uriString, origin, readEmbeddedCover, docId, id) }.getOrNull()
                 if (info != null) {
                     out[info.id] = info
                     onProgress(out.size)
@@ -105,16 +143,20 @@ class SafMusicScanner(private val context: Context) {
         }
     }
 
+    private fun documentIdOf(uriString: String): String =
+        runCatching { DocumentsContract.getDocumentId(Uri.parse(uriString)) }.getOrNull() ?: uriString
+
+    private fun trackIdOf(docId: String): String = "saf_" + md5(docId).take(16)
+
     private fun readFile(
         file: DocumentFile,
         uriString: String,
         origin: String,
         readEmbeddedCover: Boolean,
+        docId: String = documentIdOf(uriString),
+        id: String = trackIdOf(docId),
     ): MusicInfo? {
         val name = file.name ?: "Unknown"
-        val docId = runCatching { DocumentsContract.getDocumentId(Uri.parse(uriString)) }.getOrNull()
-            ?: uriString
-        val id = "saf_" + md5(docId).take(16)
 
         var title = name.substringBeforeLast('.')
         var artist = "未知歌手"
@@ -183,4 +225,11 @@ class SafMusicScanner(private val context: Context) {
         val d = MessageDigest.getInstance("MD5").digest(s.toByteArray())
         return d.joinToString("") { "%02x".format(it) }
     }
+}
+
+/** The stamp a cached row was written with, or null when it carries none. */
+private fun MusicInfo.stampOrNull(): IncrementalScan.Stamp? {
+    val mtime = extra["lastModified"]?.toLongOrNull() ?: return null
+    val size = extra["size"]?.toLongOrNull() ?: return null
+    return IncrementalScan.Stamp(mtime, size)
 }

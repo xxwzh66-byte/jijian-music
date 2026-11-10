@@ -7,6 +7,7 @@ import com.lxmusic.android.data.repo.PlaylistWithTracks
 import com.lxmusic.android.data.settings.SettingsStore
 import com.lxmusic.android.local.LocalFileDeleter
 import com.lxmusic.android.local.LocalGroup
+import com.lxmusic.android.local.LocalIndex
 import com.lxmusic.android.local.LocalLibrary
 import com.lxmusic.android.local.LocalSort
 import com.lxmusic.android.local.LocalMusicScanner
@@ -48,6 +49,23 @@ class MediaLibraryStore(
     private val _scanning = MutableStateFlow(false)
     val scanning: StateFlow<Boolean> = _scanning.asStateFlow()
 
+    /** What the last finished scan did, for the "本次扫描" line. */
+    private val _lastScan = MutableStateFlow(ScanReport())
+    val lastScan: StateFlow<ScanReport> = _lastScan.asStateFlow()
+
+    /**
+     * Search/sort cache, rebuilt only when the track list or the sort order
+     * changes.
+     *
+     * Without it every keystroke lowercased three fields of every track; the
+     * index does that once and a query is a `contains` per field. Guarded by
+     * the two values it was built from, so a stale index is impossible rather
+     * than merely unlikely.
+     */
+    private var index: LocalIndex? = null
+    private var indexTracks: List<MusicInfo>? = null
+    private var indexSort: LocalSort? = null
+
     /** Set by [com.lxmusic.android.ui.MainViewModel] so a delete can drop the queue slot. */
     var onTrackGone: ((String) -> Unit)? = null
 
@@ -72,16 +90,22 @@ class MediaLibraryStore(
                     recomputeLocal()
                     reconcilePendingDeletes(cached)
                 }
-                // 2. background refresh
+                // 2. background refresh. The cached rows go in so unchanged
+                // files skip their tag read entirely — see IncrementalScan.
                 val folders = settingsStore.state.value.scanFolders.toList()
                 val manual = settingsStore.state.value.manualUris.toList()
+                val cacheById = cached.associateBy { it.id }
+                var reused = 0
+                val started = System.currentTimeMillis()
                 val fresh = if (folders.isEmpty()) {
                     localScanner.scan()
                 } else {
                     safScanner.scanFolders(
                         treeUris = folders,
                         readEmbeddedCover = settingsStore.state.value.readEmbeddedCover,
+                        cached = cacheById,
                         onProgress = { count -> _scanning.value = count > 0 },
+                        onReused = { n -> reused = n },
                     ) + manual.mapNotNull { u ->
                         runCatching { safScanner.readSingle(Uri.parse(u), settingsStore.state.value.readEmbeddedCover) }.getOrNull()
                     }
@@ -95,6 +119,12 @@ class MediaLibraryStore(
                     repo.clearFolderCache()
                     repo.upsertLocalTracks(merged.map { LocalTrackMapper.toEntity(it, it.extra["origin"] ?: "folder") })
                 }
+                _lastScan.value = ScanReport(
+                    total = merged.size,
+                    reused = reused,
+                    read = (merged.size - reused).coerceAtLeast(0),
+                    elapsedMs = System.currentTimeMillis() - started,
+                )
             } catch (e: Exception) {
                 _scanning.value = false
                 _local.value = _local.value.copy(loading = false, error = e.message)
@@ -119,8 +149,7 @@ class MediaLibraryStore(
 
     private fun recomputeLocal() {
         val s = _local.value
-        val base = s.allTracks
-        val filtered = LocalLibrary.sort(LocalLibrary.search(base, s.query), s.sort)
+        val filtered = indexFor(s.allTracks, s.sort).search(s.query)
         when (s.group) {
             LocalGroup.SONGS ->
                 _local.value = s.copy(songs = filtered, groups = emptyList())
@@ -129,6 +158,20 @@ class MediaLibraryStore(
             LocalGroup.ARTISTS ->
                 _local.value = s.copy(songs = emptyList(), groups = LocalLibrary.byArtist(filtered))
         }
+    }
+
+    /** The index for this exact (tracks, sort) pair, rebuilt only when it changed. */
+    private fun indexFor(tracks: List<MusicInfo>, sort: LocalSort): LocalIndex {
+        val cached = index
+        // Reference equality is the right test here: the store replaces the
+        // list wholesale (`copy(allTracks = ...)`), so a new object means new
+        // contents and an equal-but-different instance means nothing to redo.
+        if (cached != null && indexTracks === tracks && indexSort == sort) return cached
+        val fresh = LocalIndex.of(tracks, sort)
+        index = fresh
+        indexTracks = tracks
+        indexSort = sort
+        return fresh
     }
 
     /** The track that currently holds `id`, recomputed from the full list. */

@@ -4,6 +4,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -51,6 +52,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,6 +66,8 @@ import com.lxmusic.android.ui.components.ConfirmSheet
 import com.lxmusic.android.ui.components.EmptyState
 import com.lxmusic.android.ui.components.HintIconButton
 import com.lxmusic.android.ui.components.toast
+import com.lxmusic.android.player.QueueDrag
+import com.lxmusic.android.player.QueueSummary
 import com.lxmusic.android.ui.neon.AuroraBackdrop
 import com.lxmusic.android.ui.neon.NeonDot
 import com.lxmusic.android.ui.neon.NeonHairline
@@ -103,6 +108,7 @@ fun QueueScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     )
     val motion = rememberMotionEnabled()
     val listState = rememberLazyListState()
+    val summary = QueueSummary.of(queue, currentIndex, player.positionMs)
 
     // 只在进入时滚一次：如果跟着 currentIndex 滚，用户手动翻看别处会被拽回来。
     LaunchedEffect(Unit) {
@@ -116,6 +122,11 @@ fun QueueScreen(viewModel: MainViewModel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var removeSeq by remember { mutableStateOf(0) }
 
+    // 拖动排序：只记录"从哪一行、拖了多远"，落点由 QueueDrag 算。
+    // 行高固定 58dp（42dp 封面 + 上下各 8dp），拿 density 换算成像素。
+    val rowHeightPx = with(LocalDensity.current) { 58.dp.toPx() }
+    var dragFrom by remember { mutableStateOf(-1) }
+    var dragPx by remember { mutableStateOf(0f) }
     var showClearConfirm by remember { mutableStateOf(false) }
     if (showClearConfirm) {
         ConfirmSheet(
@@ -150,6 +161,7 @@ fun QueueScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             QueueTopBar(
                 themeColor = themeColor,
                 count = queue.size,
+                summary = summary,
                 onBack = onBack,
                 onClear = if (queue.isNotEmpty()) ({ showClearConfirm = true }) else null,
             )
@@ -166,6 +178,17 @@ fun QueueScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                 ) {
                     itemsIndexed(queue, key = { i, m -> m.id + "#" + i }) { i, music ->
                         val isCurrent = i == currentIndex
+                        val drag = if (dragFrom >= 0) {
+                            QueueDrag.resolve(dragFrom, dragPx, rowHeightPx, queue.size)
+                        } else {
+                            null
+                        }
+                        val lift = drag?.let { QueueDrag.displacementFor(i, it, rowHeightPx) } ?: 0f
+                        Box(
+                            Modifier.graphicsLayer {
+                                translationY = lift
+                            }
+                        ) {
                         QueueRow(
                             index = i,
                             name = music.name,
@@ -182,7 +205,19 @@ fun QueueScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                                 viewModel.queueRemove(i)
                                 removeSeq += 1
                             },
+                            onDragStart = {
+                                dragFrom = i
+                                dragPx = 0f
+                            },
+                            onDrag = { delta -> dragPx += delta },
+                            onDragEnd = {
+                                val target = QueueDrag.resolve(dragFrom, dragPx, rowHeightPx, queue.size).to
+                                if (target >= 0 && target != dragFrom) viewModel.queueMove(dragFrom, target)
+                                dragFrom = -1
+                                dragPx = 0f
+                            },
                         )
+                        }
                         NeonHairline()
                     }
                 }
@@ -207,6 +242,7 @@ fun QueueScreen(viewModel: MainViewModel, onBack: () -> Unit) {
 private fun QueueTopBar(
     themeColor: String,
     count: Int,
+    summary: QueueSummary,
     onBack: () -> Unit,
     onClear: (() -> Unit)?,
 ) {
@@ -238,10 +274,14 @@ private fun QueueTopBar(
             fontWeight = FontWeight.Bold,
         )
         Spacer(Modifier.width(6.dp))
+        // 位置/剩余首数/剩余时长放在标题右边：这三个数回答的是「接下来还有多久」，
+        // 与下方的行列表是同一个问题的两种精度，所以并排而不是另起一行。
         Text(
-            if (count == 0) "" else "$count 首",
+            summary.headerText(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.weight(1f))
         if (onClear != null) {
@@ -273,6 +313,9 @@ private fun QueueRow(
     onUp: () -> Unit,
     onDown: () -> Unit,
     onRemove: () -> Unit,
+    onDragStart: () -> Unit,
+    onDrag: (Float) -> Unit,
+    onDragEnd: () -> Unit,
 ) {
     val gradient = NeonTokens.brandGradient(themeColor)
     val accent = gradient.first()
@@ -301,6 +344,19 @@ private fun QueueRow(
                 }
             }
             .clickable(onClick = onClick)
+            // 长按拖动排序：短按仍然是"跳到这首"，长按才进入排序，
+            // 两个手势不打架，也不需要多一个拖柄占宽度。
+            .pointerInput(index) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { onDragStart() },
+                    onDragEnd = { onDragEnd() },
+                    onDragCancel = { onDragEnd() },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        onDrag(amount.y)
+                    },
+                )
+            }
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
