@@ -22,6 +22,8 @@ import com.lxmusic.android.data.model.MusicInfo
 import com.lxmusic.android.data.repo.PlaylistWithTracks
 import com.lxmusic.android.ui.MainViewModel
 import com.lxmusic.android.ui.components.Cover
+import com.lxmusic.android.ui.components.TrackDescription
+import com.lxmusic.android.ui.components.describedAs
 import com.lxmusic.android.ui.components.CreatePlaylistDialog
 import com.lxmusic.android.ui.components.TrackRow
 import com.lxmusic.android.ui.components.ConfirmSheet
@@ -152,7 +154,9 @@ private fun PlaylistRow(
     var showRename by remember { mutableStateOf(false) }
 
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = OledTokens.screenMargin, vertical = OledTokens.spaceMd),
+        Modifier.fillMaxWidth().clickable(onClick = onClick)
+            .describedAs(TrackDescription.open(playlist.name, playlist.tracks.size))
+            .padding(horizontal = OledTokens.screenMargin, vertical = OledTokens.spaceMd),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Cover(playlist.coverUrl, 56.dp)

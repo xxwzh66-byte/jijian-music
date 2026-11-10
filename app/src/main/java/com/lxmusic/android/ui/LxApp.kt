@@ -35,6 +35,7 @@ import com.lxmusic.android.ui.screens.FolderManagerScreen
 import com.lxmusic.android.ui.shell.CurtainSpec
 import com.lxmusic.android.ui.shell.LxShell
 import com.lxmusic.android.ui.shell.Route
+import com.lxmusic.android.ui.shell.WidePane
 import com.lxmusic.android.ui.shell.isGroupOpen
 import com.lxmusic.android.ui.shell.routeGroupId
 import com.lxmusic.android.ui.screens.GroupDetailHost
@@ -90,6 +91,9 @@ fun LxApp(viewModel: MainViewModel) {
         NowPlayingScreen(
             state = playerState,
             lyricFontScale = settings.lyricFontScale,
+            lyricOffsetMs = settings.lyricOffsetMs,
+            onLyricFontScale = viewModel::setLyricFontScale,
+            onLyricOffset = viewModel::setLyricOffset,
             skin = PlayerSkin.from(settings.playerSkin),
             onSkinSelected = { sk -> viewModel.setPlayerSkin(sk.name) },
             showMeta = settings.showPlayerMeta,
@@ -111,6 +115,8 @@ fun LxApp(viewModel: MainViewModel) {
     val playing = playerState.current != null
 
     // 越靠前越在上层。顺序沿用 V1.1.2 那串 early-return 的判断次序，所以层级不变。
+    // V1.4 起宽屏的专辑页走右栏，不进这份列表；返回键因此只在"右栏开着"时没人接 ——
+    // 右栏自带返回钮，且从右栏退出比整屏退出更不吓人。
     // 可见性现在由 Route 栈决定，但绘制顺序仍然是这份声明顺序 —— 幕布不会因为
     // 谁的打开时间晚就盖到别人上面。
     val curtains = buildList {
@@ -127,11 +133,15 @@ fun LxApp(viewModel: MainViewModel) {
         add(CurtainSpec(Route.Stats.id, isOpen(Route.Stats), { viewModel.closeStats() }) {
             StatsScreen(viewModel = viewModel, onBack = { viewModel.closeStats() })
         })
-        add(
-            CurtainSpec(routeGroupId(routeStack), isGroupOpen(routeStack), { viewModel.closeGroup() }) {
-                GroupDetailHost(viewModel = viewModel, routes = routeStack, onBack = { viewModel.closeGroup() })
-            },
-        )
+        // V1.4: 宽屏时专辑/歌手页不再盖住列表，而是占据右栏（见 spotlight）。
+        // 平板上"边看列表边翻专辑"才是这一栏存在的理由，盖上来反而退化成手机。
+        if (!wide) {
+            add(
+                CurtainSpec(routeGroupId(routeStack), isGroupOpen(routeStack), { viewModel.closeGroup() }) {
+                    GroupDetailHost(viewModel = viewModel, routes = routeStack, onBack = { viewModel.closeGroup() })
+                },
+            )
+        }
         // 搜索排在专辑页之后：从搜索结果点进一张专辑，专辑页要盖在搜索页上面。
         add(CurtainSpec(Route.Search.id, isOpen(Route.Search), { viewModel.closeSearch() }) {
             SearchScreen(viewModel = viewModel, onBack = { viewModel.closeSearch() })
@@ -150,6 +160,19 @@ fun LxApp(viewModel: MainViewModel) {
                 }) { nowPlaying() },
             )
         }
+    }
+
+    val pane = WidePane.resolve(
+        wide = wide,
+        nowPlayingOpen = isOpen(Route.NowPlaying),
+        hasTrack = playing,
+        groupOpen = isGroupOpen(routeStack),
+    )
+
+    // 宽屏右栏不经过幕布栈，LxShell 的返回键处理因此看不到它。这里补一层：
+    // 注册在 LxShell 之前，所以幕布里的 BackHandler（后注册、优先级更高）仍然先接管。
+    if (pane == WidePane.Pane.GROUP) {
+        androidx.activity.compose.BackHandler { viewModel.closeGroup() }
     }
 
     LxShell(
@@ -190,11 +213,25 @@ fun LxApp(viewModel: MainViewModel) {
             )
         },
         curtains = curtains,
-        spotlight = if (wide && isOpen(Route.NowPlaying) && playing) {
-            { Box(Modifier.fillMaxSize()) { nowPlaying() } }
-        } else {
-            null
+        // 右栏演什么由 WidePane 决定（播放页压过专辑页，见那里的注释）。
+        spotlight = when (pane) {
+            WidePane.Pane.NOW_PLAYING -> {
+                { Box(Modifier.fillMaxSize()) { nowPlaying() } }
+            }
+            WidePane.Pane.GROUP -> {
+                {
+                    Box(Modifier.fillMaxSize()) {
+                        GroupDetailHost(
+                            viewModel = viewModel,
+                            routes = routeStack,
+                            onBack = { viewModel.closeGroup() },
+                        )
+                    }
+                }
+            }
+            WidePane.Pane.NONE -> null
         },
+        spotlightShare = WidePane.share(pane),
     )
 
     if (showUpdateDialog) {

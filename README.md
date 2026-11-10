@@ -1,6 +1,6 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.3.0** (`versionCode = 15`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.4.0** (`versionCode = 16`)
 
 一个从 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的
 音源架构出发、已经转型为**纯本地极简音乐播放器**的 Android 应用。
@@ -124,6 +124,7 @@ app/src/main/java/com/lxmusic/android/
 │   ├── HomeChrome.kt            # V1.1.3: top bar / banner / mini player / stage body
 │   ├── shell/LxShell.kt         # V1.1.3: stage slots + curtains
 │   ├── shell/Route.kt           # V1.1.6: typed curtain stack (was 6 booleans)
+│   ├── shell/WidePane.kt        # V1.4: which pane owns the tablet's right half
 │   ├── state/                   # V1.1.6: MediaLibraryStore, PlayerUiStore, StatsStore,
 │   │                            #   UpdateStore, BackupStore (MainViewModel is a facade)
 │   │                            # V1.2: + ScanReport (what the last scan skipped)
@@ -131,8 +132,10 @@ app/src/main/java/com/lxmusic/android/
 │   ├── CrashReportDialog.kt     # previous-run crash trace, copy/clear
 │   ├── components/              # TrackRow, LyricView, RotatingArtwork, PlayerSkin, ArtworkColors, SearchBar, Hints
 │   │                            # V1.2: + CoverTier (decode-size policy)
+│   │                            # V1.4: + TrackDescription (one spoken sentence per row)
 │   ├── neon/                    # Neon Vinyl design system: tokens, aurora, glass, controls, shell, NeonScreen scaffold
 │   ├── screens/                 # Local, Library, GroupDetail, NowPlaying, Queue, Equalizer, Stats, FolderManager, Settings
+│   │                            # V1.4: + LyricTuning (in-player font/offset steps)
 │   └── theme/                   # OledTokens / ColorPalettes / Theme
 ```
 
@@ -298,10 +301,13 @@ on your device. Respect copyright and the laws of your jurisdiction.
 ./gradlew :app:testDebugUnitTest
 ```
 
-382 unit tests across 38 classes, all green (run `./gradlew :app:testDebugUnitTest`):
+411 unit tests across 41 classes, all green (run `./gradlew :app:testDebugUnitTest`):
 
 | Test class | Cases | Covers |
 |---|---:|---|
+| `ui/screens/LyricTuningTest` | 11 | **V1.4**: the step buttons land on exactly the same 0.7×–1.6× / ±500 ms range as the settings sliders (otherwise the slider opens on a value it can never be dragged to); repeated ±5 % steps stay on a two-decimal grid so both screens print `1.35×`; the offset text carries an explicit sign, because `120 ms` alone does not say which way; the step buttons report themselves disabled at the ends |
+| `ui/components/TrackDescriptionTest` | 12 | **V1.4**: one spoken sentence per row instead of three separate `Text` nodes; the verb changes with the action — a group row says 打开 and never 播放, the mini player says 打开播放页; blank fields leave no orphan separator, a blank title becomes 未知曲目; the queue's two-string overload agrees with the model overload |
+| `ui/shell/WidePaneTest` | 6 | **V1.4**: a narrow screen never gets a second pane; the player outranks the album page (the user just opened it); closing the player falls back to the album page that is still open rather than emptying the pane; a player with no track does not take half the width just to show an empty disc |
 | `local/SmartCollectionsTest` | 17 | **V1.3**: `dateAdded = 0` is "unknown", not 1970 (trusting it puts the whole library on the "recently added" shelf on first upgrade); a future stamp is not recent either; most-played ties break on recency; a zero-count entry never reaches that shelf; "never played" stays empty until *something* has a play, otherwise it is just the library; `lastPlayedAt = 0` is never "forgotten"; shelves keep a fixed order and drop themselves when empty; one track can sit on several shelves |
 | `local/UnifiedSearchTest` | 15 | **V1.3**: a blank query keeps the typed text but finds nothing; the track section is whatever the caller already filtered (matching lives in `LocalIndex`, a second copy here would drift); a favourite already under 歌曲 is not repeated; albums/artists come from the *matched* tracks and are capped at six; a playlist matches by name *or* by any track inside it; `totalCount` adds every section |
 | `local/LocalIndexTest` | 10 | **V1.2**: the index answers exactly what `LocalLibrary.search` answered for every query (compared case by case), blank queries return the sorted list by identity, sort order survives filtering, grouping runs off the indexed subset |
@@ -348,6 +354,55 @@ explains the root causes behind them.
 `NeonTokensTest` is the same idea for the visual layer: it recomputes WCAG
 contrast over the *brightest possible* aurora composite on every palette, so a
 future "make it pop more" tweak cannot silently drop body text below AA.
+
+---
+
+## V1.4.0 — Everything the screen reader was never told (`versionCode = 16`)
+
+Three changes, all of them about whether the app can actually be used rather
+than what it shows.
+
+**The lyrics became a control.** `LyricView` has had an `onSeekTo` parameter
+since V5, and both call sites in `NowPlayingScreen` passed a real `onSeek` into
+it — but the body never called it. A tap on a line did nothing, and the one
+thing a timestamped lyric is *for* on a touch screen had been dead for eight
+versions. Each line is now a touch target that seeks to its own timestamp
+(`lyricSeekTarget`), the translation line belongs to the same timestamp so
+tapping either lands in the same place, and 6 dp of vertical padding puts a
+single short line over the 48 dp minimum. The label spells out the verb —
+"跳到这里播放 1:05，雨还没停" — because a lyric on its own is a fragment of a
+song, and a fragment with no verb reads as text, not as a button.
+
+**The tablet's right half stopped being a fixed 45 %.** It used to be the player
+and nothing else, so opening an album on a tablet replaced the list with the
+album and you lost your place. `WidePane.resolve` now decides between the
+player, the album page and nothing, in that priority: the player wins because
+the user just opened it, and closing it falls back to the album page that is
+still open instead of emptying the pane. The group curtain is only registered on
+narrow screens — on a tablet the page that lives in the pane must not also exist
+as a full-screen overlay behind it. A player with no track resolves to `NONE`
+rather than showing an empty disc and two disabled buttons across half the width.
+
+**Every row says what it does.** `TrackDescription` is a plain object with no
+Compose dependency, so the wording is testable: `row` says 播放, `open` says 打开
+and never 播放, `miniPlayer` says 打开播放页 (tapping it opens the player, it does
+not start playback — the action verb is the only thing a screen-reader user can
+act on). `Modifier.describedAs` merges each row's separate `Text` nodes into one
+sentence, which also stops the cover from being announced as an unlabelled image
+in the middle of it. Along the way the glass buttons in every top bar turned out
+to have a 38 dp touch target, not the 42 dp their own comment claimed — padding
+was applied before `size` — so they were rebuilt as a 48 dp outer box around the
+38 dp chip.
+
+The player screen also grew its own lyric controls: font size and offset are
+adjustable from the overflow menu, in ±5 % and ±50 ms steps clamped to exactly
+the ranges the settings sliders use. Tuning lyrics happens *while listening to a
+specific song that feels half a beat off*, so walking to the settings page and
+back loses the line you were trying to fix.
+
+What V1.4 deliberately does **not** do: no `navigation-compose` (the curtain
+model is "every page is on the stage, only the visible one is raised", which a
+`NavHost` cannot express), no Android Auto, no car browsing.
 
 ---
 

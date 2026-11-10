@@ -156,9 +156,9 @@ private fun NeonBar(
 /**
  * 顶栏的玻璃圆钮。
  *
- * 38dp 是视觉尺寸，`clickable` 铺满整个 Box 后靠外面的 2dp padding 把触摸
- * 目标撑到 42dp——比 Material 的 48dp 略小，但这里几个按钮之间至少隔 4dp，
- * 误触概率低于把顶栏撑成两行。
+ * 38dp 是视觉尺寸，`clickable` 铺满整个 Box 后靠外面的 5dp padding 把触摸
+ * 目标撑到 48dp。V1.4 之前是 2dp（42dp），比 Material 与 WCAG 2.5.5 的下限都
+ * 小一截——顶栏只有 56dp 高，多出来的 6dp 是靠把行内间距还回去换的，视觉不变。
  *
  * @param hint 非空时先 `toast(hint)` 再执行——全站 30+ 处 `HintIconButton` 都是
  *   "先说一句再执行" 的语义，圆钮版本必须保持一致。传 null 表示调用方已经自己
@@ -179,12 +179,11 @@ fun NeonGlassAction(
         animationSpec = tween(NeonTiming.stateMs, easing = FastOutSlowInEasing),
         label = "neonGlassActionScale",
     )
+    // 外层 48dp 只负责触摸，内层 38dp 负责画圆。之前把 padding 写在 size 之前、
+    // clickable 写在 padding 之后，结果 padding 完全不接手势——触摸区还是 38dp。
     Box(
         Modifier
-            .padding(horizontal = 2.dp)
-            .size(38.dp)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .neonChip(shape = RoundedCornerShape(50))
+            .size(48.dp)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -196,11 +195,19 @@ fun NeonGlassAction(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            icon,
-            contentDescription = contentDescription,
-            tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(19.dp),
-        )
+        Box(
+            Modifier
+                .size(38.dp)
+                .graphicsLayer { scaleX = scale; scaleY = scale }
+                .neonChip(shape = RoundedCornerShape(50)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = contentDescription,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(19.dp),
+            )
+        }
     }
 }

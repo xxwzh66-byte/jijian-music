@@ -1,10 +1,10 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 15 / versionName "1.3.0"**
-> 报告版本：**V1.3.0**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 91 个 .kt；`app/src/test/java` 38 个 .kt / **382 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.3.0-vc15.apk`（release 签名，**3,559,492 B**；
-> SHA-256 `7a372c94e05fe5db76b63ec5fc056b0d73d18b46b49918df45ac18324402d8c3`）
+> 交接版本：**versionCode 16 / versionName "1.4.0"**
+> 报告版本：**V1.4.0**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 94 个 .kt；`app/src/test/java` 41 个 .kt / **411 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.4.0-vc16.apk`（release 签名，**3,559,492 B**；
+> SHA-256 `6c52379e99d44781fcff3cca262730fd78e7561554d02fe0474ee78b3da1991f`）
 
 ---
 
@@ -531,7 +531,7 @@ V1.0 的修法只补了一半。
 
 ## 十、测试
 
-**382 项 / 38 个测试类 / 0 失败**（V1.3.0 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
+**411 项 / 41 个测试类 / 0 失败**（V1.4.0 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
 **不需要设备**。
 
 > **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类；V1.1.1/1.1.2 → 235 项 / 26 类；V1.1.3 → 230 项 / 26 类；V1.1.4 → 229 项 / 26 类（删访问令牌 2 项、加自动检查 1 项）**（`PlayHistoryTest` 9 项随
@@ -543,6 +543,7 @@ V1.0 的修法只补了一半。
 > （新增 `LocalIndexTest` 10、`IncrementalScanTest` 8、`ScanReportTest` 5、
 > `CoverTierTest` 9、`QueueSummaryTest` 12、`QueueDragTest` 13）；
 > **V1.3.0 → 382 项 / 38 类**（新增 `SmartCollectionsTest` 17、`UnifiedSearchTest` 15）。
+> **V1.4.0 → 411 项 / 41 类**（新增 `TrackDescriptionTest` 12、`LyricTuningTest` 11、`WidePaneTest` 6）。
 > V1.0 之前的基线（144/17 → 214/25）见 `git log`。
 
 | 测试类 | 项数 | 覆盖 |
@@ -551,6 +552,9 @@ V1.0 的修法只补了一半。
 | `PlayStatsTest` | 17 | 日/周分桶、排行、时区（固定 `Asia/Shanghai`） |
 | `RandomShuffleStateTest` | 18 | **V1.0.1 抽签契约**：next 排除当前曲、prev 同样排除且额外避开刚播完的那首、一次抽签在下一首开始前反复问答案不变、`onTrackStarted` 清空缓存、2 首队列两个方向都能换 |
 | `LocalLibraryTest` | 15 | 分组、搜索、排序 |
+| `TrackDescriptionTest` | 12 | **V1.4**：一行一句话，而不是三个独立 `Text`；动词随动作变——分组行说「打开」绝不说「播放」，迷你播放器说「打开播放页」；空字段不留孤零零的分隔符，空标题降级成「未知曲目」；队列的两字符串重载与模型重载一致 |
+| `LyricTuningTest` | 11 | **V1.4**：加减档位落在与设置页滑块完全相同的 0.7×–1.6× / ±500 ms 区间（否则滑块打开时显示一个它自己拖不到的值）；连续 ±5% 停在两位小数，两处都打印 `1.35×`；偏移文本带显式正负号，`120 ms` 单独看不出方向；到边界时按钮自报 disabled |
+| `WidePaneTest` | 6 | **V1.4**：窄屏永远只有一栏；播放页压过专辑页（用户刚点开它）；关掉播放页回落到还开着的专辑页，而不是把右栏清空；没有曲目的播放页不为了显示一张空唱片占掉半屏 |
 | `SmartCollectionsTest` | 17 | **V1.3**：`dateAdded = 0` 是「不知道」不是 1970（信它会让首次升级把整库塞进「最近添加」）、未来时间也不算新、最常播放次数相同比最近、次数为 0 不进架、「从未播放」在有播放记录之前保持为空（否则就是整库）、`lastPlayedAt = 0` 不算「很久没听」、四架顺序固定且空了自己消失、一首歌可以同时上多架 |
 | `UnifiedSearchTest` | 15 | **V1.3**：空白查询保留原文但不出结果、歌曲段就是调用方已过滤的结果（匹配只在 `LocalIndex` 一处，重复实现会漂移）、已在歌曲段出现的收藏不重复、专辑/歌手从**匹配后的**曲目分组且各封顶六、歌单按名字或按内含曲目都能命中、`totalCount` 是五段相加 |
 | `QueueSummaryTest` | 12 | **V1.2**：位置从 1 起算、`remaining` 只数当前曲之后的曲目而 `remainingSeconds` 含当前曲剩余、过期 position 被夹到本曲长度、分钟取整会跨进小时 |
@@ -631,11 +635,11 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 
 - [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\02_开发工具链\android-sdk` 存在
 - [ ] 确认 `subst X: "D:\demo\01_项目代码"` 已生效（否则 Kotlin 编译守护进程会崩，见第二节）
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 382 测试 0 失败
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 411 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.3.0-vc15.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.4.0-vc16.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---
@@ -647,10 +651,10 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 bash /d/demo/_bx4.sh assembleRelease versionedApk versionedDebugApk testDebugUnitTest
 
 # 看 APK 版本（别只看字节数：1.1.3/1.1.4/1.1.5 的 release 包都恰好是 16,098,025 B）
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.3.0-vc15.apk | grep versionCode
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.4.0-vc16.apk | grep versionCode
 
 # 验签
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.3.0-vc15.apk
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.4.0-vc16.apk
 
 # 重新生成搜索 bundle
 cd D:\demo\lx-builder; node build.mjs
@@ -1030,5 +1034,144 @@ V1.1.6 给了曲库专辑页，V1.2 让浏览变便宜。两件都做完了，�
 - 没有给架子加「更多」入口。三十首是刻意的小尺寸；想看全部就进对应分组。
 - 没有动首页顶栏。搜索与架子入口目前都长在「本地音乐」页内部，把顶栏变成
   全局搜索是 V1.4 之后的事。
+
+## 十九、V1.4.0 设计与架构记录
+
+### 1. 歌词行第一次真的是个控件
+
+`LyricView` 的 `onSeekTo: ((Long) -> Unit)? = null` 从 V5 就存在，
+`NowPlayingScreen` 的两个调用点（唱片版 `:391`、歌词版 `:431`）都老老实实传了
+`onSeek`，而**函数体从头到尾没有调用过它**。也就是说：定时歌词在触摸屏上唯一的
+用处——点一句跳过去——被静默地废了八个版本，没有任何测试或崩溃暴露它，因为
+「点了没反应」看起来就像「这里本来就不能点」。
+
+修法在 `LyricView.kt`：把 `itemsIndexed` 里的 `Column` 整行变成触摸目标。
+
+```kotlin
+private fun Modifier.lyricSeekTarget(label: String, atMs: Long, onSeek: (Long) -> Unit): Modifier {
+    val stamp = "%d:%02d".format(atMs / 60_000, (atMs / 1000) % 60)
+    return this.semantics(mergeDescendants = true) { contentDescription = "跳到这里播放 $stamp，$label" }
+        .clickable(role = Role.Button) { onSeek(atMs) }
+}
+```
+
+三个细节：
+
+- **触摸目标是行，不是两段文字。** 原文行与翻译行共享同一个时间戳，点哪一段都应
+  跳到同一处；分开成两个可点区域会出现「点翻译跳到了别的地方」。
+- **`LyricMetrics.lineTouchPadding = 6.dp`** 是给短行补身高的。一行只有四五个字时
+  文本高度约 22–28dp，光靠文字撑不到 48dp 下限。
+- **只有传了回调才可点**（`.then(if (onSeekTo != null) ... else Modifier)`）。
+  旧的只读调用点（例如未来做歌词预览）行为完全不变，不会莫名多出一堆可点区域。
+
+### 2. 播放页菜单里的歌词调节
+
+字号与偏移原本只有设置页能改。但真正想调歌词的那一刻，是**正在听某首歌、觉得
+某一行早了半拍**的时候；走进设置页、翻两个滑块、再退回来，那一句已经过去了。
+
+`ui/screens/LyricTuning.kt` 是个纯 Kotlin object（没有 Compose 依赖，因此可测），
+边界值刻意与设置页那两个 `SliderRow` **逐位相同**：`MIN_SCALE = 0.7f` /
+`MAX_SCALE = 1.6f` / `MIN_OFFSET_MS = -500` / `MAX_OFFSET_MS = 500`。不一致的后
+果很具体：在播放页按到 1.65×，回到设置页滑块会显示一个它自己永远拖不到的位置。
+
+两个反直觉点：
+
+- **字号吸附到两位小数**（`(raw * 100f).roundToInt() / 100f`）。反复 ±5% 之后浮点
+  会漂成 1.0499999，而设置页用 `"%.2f×"` 打印，同一份设置会在两处读出不同的数字。
+- **偏移文本必须带正负号**：`120 ms` 单独看不出是「歌词晚一点」还是「早一点」，
+  所以 `offsetText` 对正数强制加 `+`。
+
+按钮是 48dp 触摸目标（菜单项本来就这么高），到边界时图标变淡并带 `disabled()`
+语义 —— 按三次就知道到底了，比按了没反应更好。
+
+### 3. 平板右栏不再固定 45%
+
+V0.9 起宽屏就是「左 55% 列表 / 右 45% 播放页」，而专辑页是**全屏幕布**盖在上面。
+在平板上打开一张专辑，列表整片消失，退出来还得重新找位置。
+
+`ui/shell/WidePane.kt` 把「右栏归谁」变成一个可测的纯函数：
+
+```kotlin
+fun resolve(wide: Boolean, nowPlayingOpen: Boolean, hasTrack: Boolean, groupOpen: Boolean): Pane =
+    when {
+        !wide -> Pane.NONE
+        nowPlayingOpen && hasTrack -> Pane.NOW_PLAYING
+        groupOpen -> Pane.GROUP
+        else -> Pane.NONE
+    }
+```
+
+- **播放页压过专辑页**，因为播放页是用户刚点出来的东西；反过来会出现「点了播放，
+  右栏纹丝不动」。
+- **`hasTrack = false` 时不占半屏**：空唱片 + 两个禁用按钮横在半个屏幕上，不如把
+  宽度还给列表。
+- `share(GROUP) = 0.5f`，其余 `0.45f` —— 专辑页是曲目表，多 5% 就是多一行。
+
+`LxApp.kt` 有一处必须记住的配套改动：**Group 幕布只在窄屏注册**
+（`if (!wide) { add(CurtainSpec(...)) }`）。宽屏上同一个 `Route.Group` 会同时存在
+于「右栏」和「全屏幕布」两处，幕布的返回键会盖住右栏的，退一次只关掉看不见的那层。
+另外 `if (pane == Pane.GROUP) { BackHandler { viewModel.closeGroup() } }` 放在
+`LxShell(...)` 调用**之前**，让幕布里的 `BackHandler`（后注册、优先级更高）仍然先接管。
+
+### 4. 一行一句话：`TrackDescription` + `Modifier.describedAs`
+
+原来一行曲目是「封面（`contentDescription = null`）+ 标题 Text + 副标题 Text +
+时长 Text」四个节点。读屏要走四步，中间还会静默跳过封面，而且**从不说明「这行能播」**。
+
+`ui/components/TrackDescription.kt` 是纯函数 object（无 Compose 依赖，因此可测），
+按动作语义分方法：
+
+| 方法 | 输出 | 用在哪 |
+|---|---|---|
+| `row` | `播放 晴天，周杰伦，叶惠美，时长 4:29` | `TrackRow`、`RecentRail`、队列行 |
+| `open` | `打开 叶惠美，12 首` | 分组行、歌单、搜索结果分组 |
+| `play` | `播放 为你挑的，30 首` | 合集架、搜索结果歌单 |
+| `resume` | `继续播放 晴天，周杰伦` | 「上次播放」卡 |
+| `miniPlayer` | `打开播放页 晴天，周杰伦` | 迷你播放器 |
+| `group` | `叶惠美，共 12 首，时长 48 分` | 专辑页头信息块 |
+
+**动词是最重要的部分**：分组行说「打开」绝不能说「播放」（它进的是页面不是播放），
+迷你播放器必须说「打开播放页」（点它是开播放页，不是开始播放）。读屏用户唯一能据以
+行动的信息就是那个动词。
+
+`Modifier.describedAs(label)`（在 `Common.kt`）为 `semantics(mergeDescendants = true)
+{ contentDescription = label; role = Role.Button }`。合并之后封面不再被单独念出来，
+`Cover()` 的 `contentDescription` 默认仍是 `null`，需要时可通过新增的第 4 参数传。
+
+> **坑**：`role = Role.Button` 写在 lambda 里时，除了 `Role` 还必须
+> `import androidx.compose.ui.semantics.role`，否则报 `Unresolved reference 'role'`。
+
+### 5. 玻璃按钮的触摸目标一直是 38dp（真实缺陷）
+
+`NeonGlassAction` 的注释写着「38dp 视觉 / 42dp 触摸」，代码是：
+
+```kotlin
+Modifier.padding(horizontal = 2.dp).size(38.dp).neonChip(...).clickable(...)
+```
+
+`padding` 写在 `size` 之前、`clickable` 写在 `padding` 之后 —— Modifier 从左到右
+包裹，实际可点区域就是那 38dp，注释里说的 42dp 从来没成立过。改成两层 Box：
+
+```kotlin
+Box(Modifier.size(48.dp).clickable(role = Role.Button) { ... }, contentAlignment = Alignment.Center) {
+    Box(Modifier.size(38.dp).neonChip(shape = RoundedCornerShape(50))) { Icon(...) }
+}
+```
+
+顶栏只有 56dp 高，多出来的 10dp 是靠把行内间距还回去换的。同类改动：
+`GroupDetailScreen` 的「播放全部」从 44dp 提到 48dp（WCAG 2.5.5 下限）。
+
+### 6. 这一版没有做的事
+
+- **不上 `navigation-compose`**。`gradle/libs.versions.toml` 里那条 2.8.0 声明在
+  V1.1.6 已删除。`NavHost` 的「一次只有一个 destination 在组合里」与 `LxShell`
+  的「所有页面都在舞台上、只把可见的那块 `AnimatedVisibility` 拉起」是两种模型，
+  换过去等于重写转场与返回栈。
+- **不做 Android Auto / 车载浏览**（用户 m20089 明确排除到 V1.4 之外）。
+- **没做真机验证**。本机模拟器（`emulator -accel-check` 报 WHPX 可用）每次都在
+  `Windows Hypervisor Platform accelerator is operational` 之后以 exit code 21
+  静默退出，`adb devices` 始终为空，`-gpu swiftshader_indirect` / `-accel off` /
+  `-wipe-data` / 新建 AVD 全部复现。V1.1.8 起实机验证一律退化为
+  「JVM 单测 + dex/APK 静态核验」。
 
 *本报告由当前代码库实况生成，所有文件体积、行号、测试数均为实测值。*

@@ -62,6 +62,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import com.lxmusic.android.ui.MainViewModel
 import com.lxmusic.android.ui.components.Cover
+import com.lxmusic.android.ui.components.describedAs
+import com.lxmusic.android.ui.components.TrackDescription
 import com.lxmusic.android.ui.components.ConfirmSheet
 import com.lxmusic.android.ui.components.EmptyState
 import com.lxmusic.android.ui.components.HintIconButton
@@ -344,6 +346,8 @@ private fun QueueRow(
                 }
             }
             .clickable(onClick = onClick)
+            // V1.4: 整行合并成"播放 + 曲名 + 歌手"；三个 38dp 按钮各自仍是独立节点。
+            .describedAs(TrackDescription.row(name, singer))
             // 长按拖动排序：短按仍然是"跳到这首"，长按才进入排序，
             // 两个手势不打架，也不需要多一个拖柄占宽度。
             .pointerInput(index) {

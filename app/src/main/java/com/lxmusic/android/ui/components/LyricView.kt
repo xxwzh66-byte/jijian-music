@@ -23,6 +23,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -33,6 +37,12 @@ import com.lxmusic.android.lyric.Lyric
 /**
  * A karaoke-style scrolling lyric view: the active line is highlighted and
  * auto-centred, with a smooth scroll animation.
+ *
+ * V1.4: tapping a line seeks to that line's timestamp. [onSeekTo] has been a
+ * parameter since V5 but nothing ever called it - the lyric view scrolled and
+ * highlighted, and the one thing a timed lyric is good for on a touch screen
+ * was dead. Lines are only clickable when [onSeekTo] is non-null, so a caller
+ * that passes nothing keeps the old read-only behaviour.
  */
 @Composable
 fun LyricView(
@@ -117,7 +127,22 @@ fun LyricView(
                 label = "lyricScale",
             )
             val translation = lyric.translationFor(i)
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                // The row is the touch target, not the two Text nodes: a
+                // translation line belongs to the same lyric and tapping it
+                // must seek to the same timestamp.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (onSeekTo != null) {
+                            Modifier.lyricSeekTarget(line.text, line.timeMs, onSeekTo)
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .padding(vertical = LyricMetrics.lineTouchPadding),
+            ) {
                 Text(
                     text = line.text,
                     color = color,
@@ -146,10 +171,34 @@ fun LyricView(
 }
 
 /**
+ * One lyric line as a seek target.
+ *
+ * The accessibility label spells out what a tap does ("跳到这里播放 1:05，雨还没停")
+ * because the visible text alone is a fragment of a song; a screen reader reading
+ * the fragment with no verb gives no clue that it is a control at all.
+ */
+private fun Modifier.lyricSeekTarget(
+    label: String,
+    atMs: Long,
+    onSeek: (Long) -> Unit,
+): Modifier {
+    val stamp = "%d:%02d".format(atMs / 60_000, (atMs / 1000) % 60)
+    return this.semantics(mergeDescendants = true) {
+        contentDescription = "跳到这里播放 $stamp，$label"
+    }.clickable(role = Role.Button) { onSeek(atMs) }
+}
+
+/**
  * V5.2-3: lyric typography metrics. The gap grows together with the active
  * line (16sp -> 20sp) so the enlarged line never touches the next one.
  */
 object LyricMetrics {
     /** Base gap between lyric lines (inactive). */
     val lineGap = 14.dp + 6.dp
+
+    /**
+     * V1.4: vertical padding inside a lyric row so the tap target clears 48dp
+     * even on a line that renders as a single 22sp row.
+     */
+    val lineTouchPadding = 6.dp
 }

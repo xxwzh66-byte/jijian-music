@@ -37,6 +37,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -49,14 +53,36 @@ import com.lxmusic.android.ui.neon.NeonTiming
 import com.lxmusic.android.ui.theme.OledTokens
 
 /**
+ * V1.4: 把一整块可点区域合成一个读屏节点，并写清它会做什么。
+ *
+ * 列表与卡片原本是一串独立 `Text`，读屏要停四五次才走完一行，而且从不说明
+ * 「这一行点了会发生什么」。`mergeDescendants` 让子节点闭嘴，`role` 让读屏把
+ * "双击以激活" 念成按钮而不是纯文本。
+ */
+fun Modifier.describedAs(label: String): Modifier = semantics(mergeDescendants = true) {
+    contentDescription = label
+    role = Role.Button
+}
+
+/**
  * Rounded album art with a music-note fallback.
  *
  * The decode size is pinned to [CoverTier] rather than left to Coil's layout
  * inference: an embedded picture is often 1000×1000, and a list of forty such
  * rows would decode 160 MB of bitmaps to fill 52 dp squares.
+ *
+ * V1.4: [contentDescription] is null by default because most covers sit inside a
+ * row that already speaks for itself — a merged row that also announces
+ * "封面" stops twice for one tap. Callers that show a cover on its own
+ * (album header, mini player) pass [TrackDescription.cover] instead.
  */
 @Composable
-fun Cover(url: String?, size: Dp, modifier: Modifier = Modifier) {
+fun Cover(
+    url: String?,
+    size: Dp,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
     val density = LocalDensity.current.density
     val context = LocalContext.current
     Box(
@@ -71,7 +97,7 @@ fun Cover(url: String?, size: Dp, modifier: Modifier = Modifier) {
             // the box just stayed empty; the fallback icon is the honest answer.
             SubcomposeAsyncImage(
                 model = ImageRequest.Builder(context).data(url).size(px).build(),
-                contentDescription = null,
+                contentDescription = contentDescription,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
                 loading = null,
@@ -146,6 +172,11 @@ fun TrackRow(
                 }
             }
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            // V1.4: 整行合成一个节点。原本读屏要依次停"封面 / 歌名 / 歌手·专辑 /
+            // 时长"四次，且从不说明这一行可以播。合并后一句话说完，动作是按钮。
+            .describedAs(
+                TrackDescription.row(music, duration = if (showDuration) music.interval else null),
+            )
             .padding(horizontal = OledTokens.screenMargin, vertical = vPad),
         verticalAlignment = Alignment.CenterVertically,
     ) {

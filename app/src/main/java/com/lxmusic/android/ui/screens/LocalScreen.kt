@@ -56,6 +56,8 @@ import com.lxmusic.android.local.MusicGroup
 import com.lxmusic.android.local.SmartCollection
 import com.lxmusic.android.ui.MainViewModel
 import com.lxmusic.android.ui.components.Cover
+import com.lxmusic.android.ui.components.TrackDescription
+import com.lxmusic.android.ui.components.describedAs
 import com.lxmusic.android.ui.components.HintIconButton
 import com.lxmusic.android.ui.components.SearchBar
 import com.lxmusic.android.ui.components.SearchBarHeight
@@ -215,6 +217,8 @@ private fun LastPlayedCard(music: MusicInfo, onClick: () -> Unit) {
             .clip(RoundedCornerShape(OledTokens.radiusMd))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .clickable(onClick = onClick)
+            // V1.4: 卡片本身是一个动作("继续播放")，右侧那个箭头图标不该单独被念。
+            .describedAs(TrackDescription.resume(music))
             .padding(horizontal = OledTokens.spaceMd, vertical = OledTokens.spaceMd),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -270,6 +274,8 @@ private fun GroupChip(
 private fun GroupRow(group: MusicGroup, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick)
+            // V1.4: 这行是"打开"，不是"播放"——动作词说错，读屏用户就被带进另一个页面。
+            .describedAs(TrackDescription.open(group.title, group.count))
             .padding(horizontal = OledTokens.screenMargin, vertical = OledTokens.spaceMd),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -345,6 +351,7 @@ private fun CollectionRail(
                         .clip(RoundedCornerShape(OledTokens.radiusMd))
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
                         .clickable { onPlay(shelf) }
+                        .describedAs(TrackDescription.play(shelf.title, shelf.count))
                         .padding(OledTokens.spaceMd),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -400,6 +407,7 @@ private fun RecentRail(recent: List<MusicInfo>, onClick: (MusicInfo) -> Unit) {
                         .width(96.dp)
                         .clip(RoundedCornerShape(OledTokens.radiusMd))
                         .clickable { onClick(music) }
+                        .describedAs(TrackDescription.row(music))
                         .padding(bottom = OledTokens.spaceXs),
                 ) {
                     Cover(music.img, 96.dp)

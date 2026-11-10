@@ -42,6 +42,8 @@ import com.lxmusic.android.local.MusicGroup
 import com.lxmusic.android.local.SearchResults
 import com.lxmusic.android.ui.MainViewModel
 import com.lxmusic.android.ui.components.Cover
+import com.lxmusic.android.ui.components.describedAs
+import com.lxmusic.android.ui.components.TrackDescription
 import com.lxmusic.android.ui.components.EmptyState
 import com.lxmusic.android.ui.components.SearchBar
 import com.lxmusic.android.ui.components.SectionHeader
@@ -182,6 +184,7 @@ private fun SearchBody(
 private fun ResultGroupRow(group: MusicGroup, isArtist: Boolean, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick)
+            .describedAs(TrackDescription.open(group.title, group.count))
             .padding(horizontal = OledTokens.screenMargin, vertical = OledTokens.spaceMd),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -215,6 +218,7 @@ private fun ResultGroupRow(group: MusicGroup, isArtist: Boolean, onClick: () -> 
 private fun ResultPlaylistRow(playlist: PlaylistWithTracks, onPlay: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onPlay)
+            .describedAs(TrackDescription.play(playlist.name, playlist.tracks.size))
             .padding(horizontal = OledTokens.screenMargin, vertical = OledTokens.spaceMd),
         verticalAlignment = Alignment.CenterVertically,
     ) {

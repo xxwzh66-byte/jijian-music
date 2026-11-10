@@ -19,10 +19,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.automirrored.outlined.Notes
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
@@ -56,6 +60,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -117,6 +126,9 @@ fun NowPlayingScreen(
     onOpenQueue: () -> Unit,
     onOpenEqualizer: () -> Unit,
     lyricFontScale: Float = 1f,
+    lyricOffsetMs: Int = 0,
+    onLyricFontScale: (Float) -> Unit = {},
+    onLyricOffset: (Int) -> Unit = {},
     skin: PlayerSkin = PlayerSkin.VINYL,
     onSkinSelected: (PlayerSkin) -> Unit = {},
     showMeta: Boolean = true,
@@ -161,6 +173,10 @@ fun NowPlayingScreen(
                 onOpenQueue = onOpenQueue,
                 onOpenEqualizer = onOpenEqualizer,
                 themeColor = themeColor,
+                lyricFontScale = lyricFontScale,
+                lyricOffsetMs = lyricOffsetMs,
+                onLyricFontScale = onLyricFontScale,
+                onLyricOffset = onLyricOffset,
             )
 
             // ---------- 中央舞台 ----------
@@ -238,6 +254,10 @@ private fun NeonTopBar(
     onOpenQueue: () -> Unit,
     onOpenEqualizer: () -> Unit,
     themeColor: String,
+    lyricFontScale: Float,
+    lyricOffsetMs: Int,
+    onLyricFontScale: (Float) -> Unit,
+    onLyricOffset: (Int) -> Unit,
 ) {
     Row(
         Modifier
@@ -309,8 +329,116 @@ private fun NeonTopBar(
                     leadingIcon = { Icon(Icons.Default.QueueMusic, null, tint = NeonTokens.textMuted) },
                     onClick = { onMenuOpenChange(false); onOpenQueue() },
                 )
+                // 字号与偏移就地调，不关菜单：调歌词的人正在听，关一次菜单就是
+                // 把当前那句打断一次。改动立刻落盘，设置页下次打开看到同一组数。
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp)
+                        .height(1.dp)
+                        .background(NeonTokens.textMuted.copy(alpha = 0.16f))
+                )
+                LyricTuningRow(
+                    label = "歌词字号",
+                    value = LyricTuning.scaleText(lyricFontScale),
+                    decreaseEnabled = LyricTuning.canShrink(lyricFontScale),
+                    increaseEnabled = LyricTuning.canGrow(lyricFontScale),
+                    onDecrease = {
+                        onLyricFontScale(LyricTuning.scale(lyricFontScale, LyricTuning.ScaleStep.DOWN))
+                    },
+                    onIncrease = {
+                        onLyricFontScale(LyricTuning.scale(lyricFontScale, LyricTuning.ScaleStep.UP))
+                    },
+                )
+                LyricTuningRow(
+                    label = "歌词偏移",
+                    value = LyricTuning.offsetText(lyricOffsetMs),
+                    decreaseEnabled = lyricOffsetMs > LyricTuning.MIN_OFFSET_MS,
+                    increaseEnabled = lyricOffsetMs < LyricTuning.MAX_OFFSET_MS,
+                    onDecrease = {
+                        onLyricOffset(LyricTuning.offset(lyricOffsetMs, LyricTuning.OffsetStep.EARLIER))
+                    },
+                    onIncrease = {
+                        onLyricOffset(LyricTuning.offset(lyricOffsetMs, LyricTuning.OffsetStep.LATER))
+                    },
+                    onReset = if (LyricTuning.canResetOffset(lyricOffsetMs)) {
+                        { onLyricOffset(0) }
+                    } else {
+                        null
+                    },
+                )
             }
         }
+    }
+}
+
+/**
+ * 菜单里的一行「标签 + 减 + 当前值 + 加」。
+ *
+ * 按钮做成 48dp 的触摸目标又不会把菜单撑得很高：菜单项本来就是这个高度。
+ * 到达上下限时按钮变淡且不再响应 —— 用户按三次就明白「到底了」，
+ * 比按了没反应更好。
+ */
+@Composable
+private fun LyricTuningRow(
+    label: String,
+    value: String,
+    decreaseEnabled: Boolean,
+    increaseEnabled: Boolean,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit,
+    onReset: (() -> Unit)? = null,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = NeonTokens.text, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        if (onReset != null) {
+            StepButton(Icons.Default.Refresh, "把${label}复位", true, onReset)
+        }
+        StepButton(Icons.Default.Remove, "${label}减小", decreaseEnabled, onDecrease)
+        Text(
+            text = value,
+            color = NeonTokens.textMuted,
+            fontSize = 13.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(min = 54.dp),
+        )
+        StepButton(Icons.Default.Add, "${label}增大", increaseEnabled, onIncrease)
+    }
+}
+
+@Composable
+private fun StepButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    desc: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .size(48.dp)
+            .then(
+                if (enabled) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier
+                }
+            )
+            .semantics {
+                contentDescription = desc
+                role = Role.Button
+                if (!enabled) disabled()
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (enabled) NeonTokens.text else NeonTokens.textMuted.copy(alpha = 0.35f),
+            modifier = Modifier.size(18.dp),
+        )
     }
 }
 

@@ -2,6 +2,10 @@ package com.lxmusic.android.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +48,7 @@ import com.lxmusic.android.local.LocalGroup
 import com.lxmusic.android.local.MusicGroup
 import com.lxmusic.android.ui.MainViewModel
 import com.lxmusic.android.ui.components.Cover
+import com.lxmusic.android.ui.components.TrackDescription
 import com.lxmusic.android.ui.components.TrackRow
 import com.lxmusic.android.ui.neon.AuroraBackdrop
 import com.lxmusic.android.ui.neon.NeonGlassAction
@@ -179,7 +184,15 @@ private fun GroupTopBar(title: String, onBack: () -> Unit, onShuffle: () -> Unit
 
 @Composable
 private fun GroupHeader(group: MusicGroup, isArtist: Boolean) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = OledTokens.screenMargin)) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = OledTokens.screenMargin)
+            // V1.4: 标题/歌手/首数三行合成一句。这是信息块不是按钮，所以只合并不给 role。
+            .semantics(mergeDescendants = true) {
+                contentDescription = TrackDescription.group(group.title, group.count, group.totalDuration)
+            },
+    ) {
         Row(verticalAlignment = Alignment.Bottom) {
             Cover(group.coverUrl, 132.dp)
             Spacer(Modifier.width(OledTokens.spaceLg))
@@ -224,9 +237,14 @@ private fun GroupActions(count: Int, onPlayAll: () -> Unit) {
         Row(
             Modifier
                 .weight(1f)
-                .height(44.dp)
+                // V1.4: 44dp 的按钮对拇指偏窄，抬到 Material 的 48dp 下限。
+                .height(48.dp)
                 .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(OledTokens.radiusMd))
-                .clickable(enabled = count > 0, onClick = onPlayAll),
+                .clickable(enabled = count > 0, onClick = onPlayAll)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = "播放全部，${count} 首"
+                    role = Role.Button
+                },
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {

@@ -65,6 +65,7 @@ fun LxShell(
     dock: @Composable () -> Unit,
     curtains: List<CurtainSpec>,
     spotlight: (@Composable () -> Unit)? = null,
+    spotlightShare: Float = 0.45f,
 ) {
     // 返回键只关最上面那块。没有任何幕布时不接管，留给系统。
     curtains.firstOrNull { it.visible }?.let { top ->
@@ -76,9 +77,12 @@ fun LxShell(
 
         if (spotlight != null) {
             // 宽屏双栏：左栏是完整舞台，右栏是同一个播放页，不再弹全屏。
+            // 播放页是竖版唱片，45% 够用；专辑页是一列 48dp 的行，太窄会把歌名
+            // 挤成两行。所以右栏宽度由调用方按内容给，缺省仍是 0.45。
+            val share = spotlightShare.coerceIn(0.30f, 0.70f)
             Row(Modifier.fillMaxSize()) {
-                Column(Modifier.weight(0.55f)) { Stage(tabs, dock) }
-                Box(Modifier.weight(0.45f)) { spotlight() }
+                Column(Modifier.weight(1f - share)) { Stage(tabs, dock) }
+                Box(Modifier.weight(share)) { spotlight() }
             }
         } else {
             Stage(tabs, dock)

@@ -49,6 +49,8 @@ import com.lxmusic.android.data.settings.AppSettings
 import com.lxmusic.android.net.UpdateInfo
 import com.lxmusic.android.ui.UpdateStatus
 import com.lxmusic.android.ui.components.Cover
+import com.lxmusic.android.ui.components.TrackDescription
+import com.lxmusic.android.ui.components.describedAs
 import com.lxmusic.android.ui.components.HintIconButton
 import com.lxmusic.android.ui.neon.NeonDot
 import com.lxmusic.android.ui.neon.NeonGlassAction
@@ -208,6 +210,10 @@ internal fun MiniPlayer(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = onClick,
+                )
+                // V1.4: 整条迷你播放器是一个按钮——"打开播放页"，点两下是暂停/下一首。
+                .describedAs(
+                    TrackDescription.miniPlayer(state.current?.name, state.current?.singer),
                 ),
         ) {
             // 顶部进度线。呼吸只作用在 alpha 上（不是长度），所以不会误读进度。
