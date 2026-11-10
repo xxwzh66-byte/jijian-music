@@ -13,6 +13,10 @@ import com.lxmusic.android.local.LocalSort
 import com.lxmusic.android.local.LocalMusicScanner
 import com.lxmusic.android.local.LocalTrackMapper
 import com.lxmusic.android.local.SafMusicScanner
+import com.lxmusic.android.local.SearchResults
+import com.lxmusic.android.local.SmartCollection
+import com.lxmusic.android.local.SmartCollections
+import com.lxmusic.android.local.UnifiedSearch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,6 +70,25 @@ class MediaLibraryStore(
     private var indexTracks: List<MusicInfo>? = null
     private var indexSort: LocalSort? = null
 
+    /** Search page's index - see [searchIndexFor] for why it is a second one. */
+    private var searchIndex: LocalIndex? = null
+    private var searchIndexTracks: List<MusicInfo>? = null
+
+    /**
+     * The automatically assembled shelves, rebuilt whenever the library or the
+     * play log changes.
+     *
+     * Rebuilding is a full pass over the track list, so it happens here once
+     * rather than inside the composable that draws the shelves - a recomposition
+     * must not re-derive them.
+     */
+    private val _collections = MutableStateFlow<List<SmartCollection>>(emptyList())
+    val collections: StateFlow<List<SmartCollection>> = _collections.asStateFlow()
+
+    /** The unified search page's query and results. */
+    private val _search = MutableStateFlow(SearchResults())
+    val search: StateFlow<SearchResults> = _search.asStateFlow()
+
     /** Set by [com.lxmusic.android.ui.MainViewModel] so a delete can drop the queue slot. */
     var onTrackGone: ((String) -> Unit)? = null
 
@@ -88,6 +111,10 @@ class MediaLibraryStore(
                 if (cached.isNotEmpty()) {
                     _local.value = _local.value.copy(loading = false, allTracks = cached)
                     recomputeLocal()
+                    // The shelves must be there on the same frame as the list,
+                    // otherwise the home screen opens with an empty gap and
+                    // fills itself a second later.
+                    rebuildCollections(cached)
                     reconcilePendingDeletes(cached)
                 }
                 // 2. background refresh. The cached rows go in so unchanged
@@ -125,6 +152,7 @@ class MediaLibraryStore(
                     read = (merged.size - reused).coerceAtLeast(0),
                     elapsedMs = System.currentTimeMillis() - started,
                 )
+                rebuildCollections(merged)
             } catch (e: Exception) {
                 _scanning.value = false
                 _local.value = _local.value.copy(loading = false, error = e.message)
@@ -158,6 +186,77 @@ class MediaLibraryStore(
             LocalGroup.ARTISTS ->
                 _local.value = s.copy(songs = emptyList(), groups = LocalLibrary.byArtist(filtered))
         }
+        // The search page shares the index, so a keystroke in either box has to
+        // refresh both. Cheap: in-memory only, no database read.
+        refreshSearch()
+    }
+
+    /**
+     * Recomputes the shelves and, if the search page is open, its results too.
+     *
+     * Both depend on the same three inputs (tracks, play log, playlists), so
+     * they are refreshed from one place instead of every mutation having to
+     * remember to call both.
+     */
+    private fun rebuildCollections(tracks: List<MusicInfo>) {
+        scope.launch {
+            val now = System.currentTimeMillis()
+            val played = withContext(Dispatchers.IO) {
+                repo.playRecords(0L, now)
+                    .groupingBy { it.music.id }
+                    .fold(SmartCollections.PlayStat(0, 0L)) { acc, record ->
+                        SmartCollections.PlayStat(
+                            count = acc.count + 1,
+                            lastPlayedAt = maxOf(acc.lastPlayedAt, record.playedAt),
+                        )
+                    }
+            }
+            _collections.value = SmartCollections.build(tracks, played, now)
+            refreshSearch()
+        }
+    }
+
+    // ---------------- search ----------------
+
+    /** Re-runs the current query against the current library and playlists. */
+    fun refreshSearch() {
+        val q = _search.value.query
+        if (q.isBlank()) {
+            _search.value = SearchResults()
+            return
+        }
+        _search.value = UnifiedSearch.run(
+            query = q,
+            tracks = searchIndexFor(_local.value.allTracks).search(q),
+            favorites = _library.value.favorites,
+            playlists = _library.value.playlists,
+        )
+    }
+
+    /**
+     * The search page's own index, kept apart from the list's.
+     *
+     * The list index follows the user's sort order, and the two share one slot
+     * in [indexFor] - a search that borrowed it would evict the list's copy on
+     * every keystroke and then have to rebuild it on the way back. Search results
+     * are ordered by title anyway, so its index never depends on the sort chips.
+     */
+    private fun searchIndexFor(tracks: List<MusicInfo>): LocalIndex {
+        val cached = searchIndex
+        if (cached != null && searchIndexTracks === tracks) return cached
+        val fresh = LocalIndex.of(tracks, LocalSort.TITLE_ASC)
+        searchIndex = fresh
+        searchIndexTracks = tracks
+        return fresh
+    }
+
+    fun setSearchQuery(q: String) {
+        _search.value = _search.value.copy(query = q)
+        refreshSearch()
+    }
+
+    fun clearSearch() {
+        _search.value = SearchResults()
     }
 
     /** The index for this exact (tracks, sort) pair, rebuilt only when it changed. */
@@ -207,6 +306,9 @@ class MediaLibraryStore(
                 playlists = lists,
                 favoriteIds = favs.map { it.id }.toSet(),
             )
+            // Favourites and playlists are two of the search page's sections,
+            // so a library refresh has to re-run the query as well.
+            refreshSearch()
         }
     }
 
@@ -303,6 +405,8 @@ class MediaLibraryStore(
     suspend fun dropFromVisibleLists(id: String) {
         _local.value = _local.value.copy(allTracks = _local.value.allTracks.filterNot { it.id == id })
         recomputeLocal()
+        // A deleted track must leave the shelves too, not just the list.
+        rebuildCollections(_local.value.allTracks)
         refreshLibrary()
     }
 

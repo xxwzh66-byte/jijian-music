@@ -94,6 +94,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val library: StateFlow<LibraryUiState> get() = libraryStore.library
     val scanning: StateFlow<Boolean> get() = libraryStore.scanning
     val lastScan: StateFlow<ScanReport> get() = libraryStore.lastScan
+
+    /** The auto-assembled shelves on the home screen. */
+    val collections: StateFlow<List<com.lxmusic.android.local.SmartCollection>> get() =
+        libraryStore.collections
+
+    /** The unified search page's query plus everything it found. */
+    val search: StateFlow<com.lxmusic.android.local.SearchResults> get() = libraryStore.search
     val player: StateFlow<PlayerState> get() = playerUi.player
     val equalizer: StateFlow<EqualizerState> get() = playerUi.equalizer
     val stats: StateFlow<StatsUiState> get() = statsStore.stats
@@ -145,6 +152,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openQueue() = routes.open(Route.Queue)
     fun closeQueue() = routes.close(Route.Queue)
+
+    /** Opens the unified search page. The query survives closing and reopening. */
+    fun openSearch() = routes.open(Route.Search)
+    fun closeSearch() = routes.close(Route.Search)
+    fun setSearchQuery(q: String) = libraryStore.setSearchQuery(q)
+    fun clearSearch() = libraryStore.clearSearch()
+
+    /** Plays a search result inside its own section, not the whole library. */
+    fun playSearchTracks(startIndex: Int = 0) {
+        val list = search.value.tracks
+        if (list.isNotEmpty()) playerUi.playAndOpen(list, startIndex)
+    }
     fun openEqualizer() = routes.open(Route.Equalizer)
     fun closeEqualizer() = routes.close(Route.Equalizer)
     fun openNowPlayingCurtain() = routes.open(Route.NowPlaying)
@@ -157,6 +176,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * cannot be handed over.
      */
     fun openGroup(group: MusicGroup) = routes.open(Route.Group(group.key))
+
+    /**
+     * Opens a group page from a bare key, as the search results hand it over.
+     *
+     * The key already says which kind it is (`artist:` prefix), so the caller
+     * does not have to carry a group object around just to open its page.
+     */
+    fun openGroupByKey(key: String) = routes.open(Route.Group(key))
+
 
     /**
      * Closes the topmost group page.
@@ -306,6 +334,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         routes.open(Route.NowPlaying)
     }
 
+    /**
+     * Plays a shelf from the start.
+     *
+     * The queue is the shelf's own tracks, not the library: "play 最常播放" means
+     * those thirty songs, and letting the queue continue into the rest of the
+     * library would make the shelf meaningless one track later.
+     */
+    fun playCollection(collection: com.lxmusic.android.local.SmartCollection, startIndex: Int = 0) {
+        if (collection.tracks.isEmpty()) return
+        playerUi.playAndOpen(collection.tracks, startIndex)
+    }
+
     suspend fun isFavorite(musicId: String): Boolean = libraryStore.isFavorite(musicId)
     fun toggleFavorite(music: MusicInfo) = libraryStore.toggleFavorite(music)
     fun createPlaylist(name: String, onDone: (Long) -> Unit = {}) = libraryStore.createPlaylist(name, onDone)
@@ -322,6 +362,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun playFavorites(startIndex: Int = 0) {
         val favs = library.value.favorites
         if (favs.isNotEmpty()) playerUi.playAndOpen(favs, startIndex)
+    }
+
+    /**
+     * 播放搜索页「收藏」那一段里的某一首。
+     *
+     * 队列用这一段匹配出来的子集，不是全部收藏 —— 用户是带着那个关键词点下去的，
+     * 队列里冒出无关的歌就等于关键词失效了。
+     */
+    fun playSearchFavorites(startIndex: Int = 0) {
+        val list = search.value.favorites
+        if (list.isNotEmpty()) playerUi.playAndOpen(list, startIndex)
     }
 
     fun playRecent(startIndex: Int = 0) {

@@ -1,10 +1,10 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 14 / versionName "1.2.0"**
-> 报告版本：**V1.2.0**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 88 个 .kt；`app/src/test/java` 36 个 .kt / **350 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.2.0-vc14.apk`（release 签名，**3,543,112 B**；
-> SHA-256 `72e69d7e04f98584d6756c63921f4dd6928f112fe3f3d14d2a3a77e0f6f4a8f5`）
+> 交接版本：**versionCode 15 / versionName "1.3.0"**
+> 报告版本：**V1.3.0**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 91 个 .kt；`app/src/test/java` 38 个 .kt / **382 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.3.0-vc15.apk`（release 签名，**3,559,492 B**；
+> SHA-256 `7a372c94e05fe5db76b63ec5fc056b0d73d18b46b49918df45ac18324402d8c3`）
 
 ---
 
@@ -30,7 +30,10 @@
   新增 `.jjmbackup` 备份恢复与「这一年」年度回顾。见第十四节
 - **V1.2 性能**：四件事都只做「已经算过的东西别重算」——扫描按 `(mtime, size)`
   双标复用缓存、搜索对全库只 lowercase 一次、封面按显示尺寸分级解码、队列头部
-  给出「3/12 · 剩 34 分」并支持长按拖动排序。见第十六节
+  给出「3/12 · 剩 34 分」并支持长按拖动排序。见第十七节
+- **V1.3 找得到**：四张没人维护的架子（最近添加 / 最常播放 / 从未播放 / 很久没听）
+  从曲库加播放记录现算，尺寸各三十首、顺序固定、空了就自己消失；一次搜索返回五种
+  答案（歌曲 / 收藏 / 专辑 / 歌手 / 歌单），匹配只在 `LocalIndex` 一处实现。见第十八节
 - **V1.0.1 耳机按键修复**：media3 的 `seekToPrevious()` 有两条路会变成「重播当前曲」——
   位置超过 `getMaxSeekToPreviousPosition()`（默认 3s），或 `getPreviousIndex()` 返回
   `-1`。V1.0 只关了前者；V1.0.1 让抽签**永不返回 -1**，把后者也堵掉。
@@ -528,7 +531,7 @@ V1.0 的修法只补了一半。
 
 ## 十、测试
 
-**350 项 / 36 个测试类 / 0 失败**（V1.2.0 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
+**382 项 / 38 个测试类 / 0 失败**（V1.3.0 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
 **不需要设备**。
 
 > **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类；V1.1.1/1.1.2 → 235 项 / 26 类；V1.1.3 → 230 项 / 26 类；V1.1.4 → 229 项 / 26 类（删访问令牌 2 项、加自动检查 1 项）**（`PlayHistoryTest` 9 项随
@@ -538,7 +541,8 @@ V1.0 的修法只补了一半。
 > （新增 `ApkDownloaderTest` 12）；**V1.1.8 → 293 项 / 30 类**（`ApkDownloaderTest` 12 → 16，
 > 新增 4 个 `canAppend` 续传判定用例）；**V1.2.0 → 350 项 / 36 类**
 > （新增 `LocalIndexTest` 10、`IncrementalScanTest` 8、`ScanReportTest` 5、
-> `CoverTierTest` 9、`QueueSummaryTest` 12、`QueueDragTest` 13）。
+> `CoverTierTest` 9、`QueueSummaryTest` 12、`QueueDragTest` 13）；
+> **V1.3.0 → 382 项 / 38 类**（新增 `SmartCollectionsTest` 17、`UnifiedSearchTest` 15）。
 > V1.0 之前的基线（144/17 → 214/25）见 `git log`。
 
 | 测试类 | 项数 | 覆盖 |
@@ -547,6 +551,8 @@ V1.0 的修法只补了一半。
 | `PlayStatsTest` | 17 | 日/周分桶、排行、时区（固定 `Asia/Shanghai`） |
 | `RandomShuffleStateTest` | 18 | **V1.0.1 抽签契约**：next 排除当前曲、prev 同样排除且额外避开刚播完的那首、一次抽签在下一首开始前反复问答案不变、`onTrackStarted` 清空缓存、2 首队列两个方向都能换 |
 | `LocalLibraryTest` | 15 | 分组、搜索、排序 |
+| `SmartCollectionsTest` | 17 | **V1.3**：`dateAdded = 0` 是「不知道」不是 1970（信它会让首次升级把整库塞进「最近添加」）、未来时间也不算新、最常播放次数相同比最近、次数为 0 不进架、「从未播放」在有播放记录之前保持为空（否则就是整库）、`lastPlayedAt = 0` 不算「很久没听」、四架顺序固定且空了自己消失、一首歌可以同时上多架 |
+| `UnifiedSearchTest` | 15 | **V1.3**：空白查询保留原文但不出结果、歌曲段就是调用方已过滤的结果（匹配只在 `LocalIndex` 一处，重复实现会漂移）、已在歌曲段出现的收藏不重复、专辑/歌手从**匹配后的**曲目分组且各封顶六、歌单按名字或按内含曲目都能命中、`totalCount` 是五段相加 |
 | `QueueSummaryTest` | 12 | **V1.2**：位置从 1 起算、`remaining` 只数当前曲之后的曲目而 `remainingSeconds` 含当前曲剩余、过期 position 被夹到本曲长度、分钟取整会跨进小时 |
 | `QueueDragTest` | 13 | **V1.2**：半行在**两个方向**都进位（`roundToInt` 把 -0.5 取 0，朴素写法会让向上拖慢半行）、落点夹紧队列而浮动偏移保留全程、被跨过的行反向让位一格、起点越界与零行高都是空操作 |
 | `LocalIndexTest` | 10 | **V1.2**：索引对每个查询都答出与 `LocalLibrary.search` 相同的曲目（逐查询比对而非手挑断言）、空白查询按引用返回已排序列表、排序在过滤后保持、分组跑在索引子集上 |
@@ -625,11 +631,11 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 
 - [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\02_开发工具链\android-sdk` 存在
 - [ ] 确认 `subst X: "D:\demo\01_项目代码"` 已生效（否则 Kotlin 编译守护进程会崩，见第二节）
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 350 测试 0 失败
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 382 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.2.0-vc14.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.3.0-vc15.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---
@@ -638,13 +644,13 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 
 ```bash
 # 构建 + 出包 + 测试（脚本在仓库外，见第二节）
-bash /d/demo/_bx.sh :app:assembleDebug :app:versionedApk :app:testDebugUnitTest
+bash /d/demo/_bx4.sh assembleRelease versionedApk versionedDebugApk testDebugUnitTest
 
 # 看 APK 版本（别只看字节数：1.1.3/1.1.4/1.1.5 的 release 包都恰好是 16,098,025 B）
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.2.0-vc14.apk | grep versionCode
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.3.0-vc15.apk | grep versionCode
 
 # 验签
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.2.0-vc14.apk
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.3.0-vc15.apk
 
 # 重新生成搜索 bundle
 cd D:\demo\lx-builder; node build.mjs
@@ -956,5 +962,73 @@ Coil 本身会从布局约束推断目标尺寸，所以显眼的情况本来就
   另一个量级的手势逻辑，留到有人真的抱怨再说。
 - 没有打开 R8 的改名。理由同 V1.1.8：收益在删代码，不在改名，而改名要同时说服
   Gson / Room / media3 / Compose 四套反射约定。
+
+---
+
+## 十八、V1.3.0 设计与架构记录
+
+V1.1.6 给了曲库专辑页，V1.2 让浏览变便宜。两件都做完了，曲库大起来仍然没人回答
+那个真正的问题：**今晚听什么**。一千二百首按标题排序的列表不是答案，而 App 还在
+用户滚过去的时候把这张表重算四遍。
+
+### 1. 四张没人维护的架子（`local/SmartCollections.kt`）
+
+`SmartCollections.build(tracks, played, now)` 从曲库 + 播放记录现算四张架子：
+最近添加 / 最常播放 / 从未播放 / 很久没听，各三十首。它们不是歌单：不落盘、不能
+改名、不能编辑。三个判断值得写下来：
+
+- **`dateAdded = 0` 是「不知道」，不是 1970。** 从没记录过入库时间的版本升级上来时，
+  把 0 当成「很新」会让整库涌进「最近添加」——一张装着所有东西的架子不是架子。
+- **「从未播放」在有第一条播放记录之前保持为空。** 全新安装时每首都没播过，这架
+  就等于整库，而那正是用户已经看得见的东西。
+- **「很久没听」要求播过**（`lastPlayedAt in 1 until now - 90d`）。没播过不是被遗忘，
+  是还没轮到；两架只在定义允许的地方重叠。
+
+顺序**固定**而非「智能排序」：每次进来都在挪的架子，等于每次都要重新找一遍。空的
+架子自己消失，所以没有播放记录的库只显示一行而不是四行。
+
+`MediaLibraryStore.rebuildCollections` 在读 Room 缓存命中时就先算一次（架子必须和
+列表同一帧出现，否则首页先空一格再补），扫描结束、刷新库、删歌之后再各算一次。
+`PlayStat` 由 `repo.playRecords(0L, now)` 一次聚合得出，不是在 UI 线程里遍历。
+
+### 2. 一次搜索，五种答案（`local/UnifiedSearch.kt`）
+
+首页工具栏那个输入框只过滤它下面的列表——输入歌单名什么也搜不到，输入专辑名能搜到
+里面的歌却搜不到这张专辑。`UnifiedSearch.run(query, tracks, favorites, playlists)`
+跑一次查询并拆成五段：歌曲 / 收藏 / 专辑 / 歌手 / 歌单。
+
+两条规则让它保持诚实：
+
+- **匹配只在一处实现。** 命中的判定交给 `LocalIndex`（V1.2 那份预先小写的索引），
+  搜索页拿到的是**已经过滤好的**曲目。在 `UnifiedSearch` 里再匹配一遍就是第二份
+  「什么算命中」的实现，迟早漂移。
+- **专辑与歌手从「匹配后的曲目」分组。** 用户问的是「我哪些专辑里有它」，不是
+  「把我的专辑列出来」。所以 `LocalLibrary.byAlbum(tracks)` 收的是过滤结果。
+
+收藏段还会剔掉已经出现在歌曲段里的曲目——同一首歌在一页上出现两次，读起来像 bug。
+专辑/歌手/歌单各封顶六条，页面上限是为了「一眼能扫完」，不是分页。
+
+### 3. 架子只播自己的三十首
+
+`playCollection(collection)` 把队列设为这一架的歌，不续到全库。点「最常播放」就是要
+那三十首；让队列一首之后继续滑进曲库剩下的部分，架子在一首歌之后就失去意义了。
+同理，`playSearchFavorites` 播的是搜索命中的收藏子集，不是全部收藏——用户带着关键词
+点下去，队列里冒出无关的歌等于关键词失效。
+
+### 4. 入口放哪
+
+`LocalScreen` 顶栏在输入框与排序之间加了一个全局搜索按钮，架子的横滑条放在「最近在听」
+之后、「本地音乐」分段标题之前，并且只在**查询为空 + 分组为歌曲**时出现：在专辑或歌手
+分组里，同一个位置已经被那张列表占用了，再插一条横滑带会让两种浏览节奏打架。
+
+搜索页的幕布插在 Group 之后、Queue 之前——从搜索结果点进专辑，专辑页要盖在搜索页
+上面，而两者都在队列之下。
+
+### 5. 这一版没有做的事
+
+- 没有把搜索做成跨进程/跨库（在线音源 V1.1.0 已删，没有第二份曲库可搜）。
+- 没有给架子加「更多」入口。三十首是刻意的小尺寸；想看全部就进对应分组。
+- 没有动首页顶栏。搜索与架子入口目前都长在「本地音乐」页内部，把顶栏变成
+  全局搜索是 V1.4 之后的事。
 
 *本报告由当前代码库实况生成，所有文件体积、行号、测试数均为实测值。*

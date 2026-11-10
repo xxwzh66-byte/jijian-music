@@ -15,3 +15,5 @@ typealias UpdateStatus = com.lxmusic.android.ui.state.UpdateStatus
 typealias UpdateInstallState = com.lxmusic.android.ui.state.UpdateInstallState
 typealias InstallStatus = com.lxmusic.android.ui.state.InstallStatus
 typealias ScanReport = com.lxmusic.android.ui.state.ScanReport
+typealias SearchResults = com.lxmusic.android.local.SearchResults
+typealias SmartCollection = com.lxmusic.android.local.SmartCollection

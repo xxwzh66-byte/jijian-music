@@ -1,6 +1,6 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.2.0** (`versionCode = 14`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.3.0** (`versionCode = 15`)
 
 一个从 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的
 音源架构出发、已经转型为**纯本地极简音乐播放器**的 Android 应用。
@@ -92,6 +92,8 @@ app/src/main/java/com/lxmusic/android/
 │   ├── LocalLibrary.kt          # grouping / sorting / search / merge
 │   ├── LocalIndex.kt            # V1.2: pre-lowered search index (one lowercase pass)
 │   ├── IncrementalScan.kt       # V1.2: (mtime, size) stamp reuse policy
+│   ├── SmartCollections.kt      # V1.3: recently added / most played / never played / long forgotten
+│   ├── UnifiedSearch.kt         # V1.3: one query across tracks, favourites, albums, artists, playlists
 │   └── LocalTrackMapper.kt      # entity <-> model
 ├── lyric/
 │   ├── Lyric.kt                 # Lyric model + LrcParser
@@ -296,10 +298,12 @@ on your device. Respect copyright and the laws of your jurisdiction.
 ./gradlew :app:testDebugUnitTest
 ```
 
-350 unit tests across 36 classes, all green (run `./gradlew :app:testDebugUnitTest`):
+382 unit tests across 38 classes, all green (run `./gradlew :app:testDebugUnitTest`):
 
 | Test class | Cases | Covers |
 |---|---:|---|
+| `local/SmartCollectionsTest` | 17 | **V1.3**: `dateAdded = 0` is "unknown", not 1970 (trusting it puts the whole library on the "recently added" shelf on first upgrade); a future stamp is not recent either; most-played ties break on recency; a zero-count entry never reaches that shelf; "never played" stays empty until *something* has a play, otherwise it is just the library; `lastPlayedAt = 0` is never "forgotten"; shelves keep a fixed order and drop themselves when empty; one track can sit on several shelves |
+| `local/UnifiedSearchTest` | 15 | **V1.3**: a blank query keeps the typed text but finds nothing; the track section is whatever the caller already filtered (matching lives in `LocalIndex`, a second copy here would drift); a favourite already under 歌曲 is not repeated; albums/artists come from the *matched* tracks and are capped at six; a playlist matches by name *or* by any track inside it; `totalCount` adds every section |
 | `local/LocalIndexTest` | 10 | **V1.2**: the index answers exactly what `LocalLibrary.search` answered for every query (compared case by case), blank queries return the sorted list by identity, sort order survives filtering, grouping runs off the indexed subset |
 | `player/QueueDragTest` | 13 | **V1.2**: half a row commits a slot in *both* directions (`roundToInt` rounds -0.5 to 0, so the naive form made upward drags feel half a row late), the target clamps to the queue while the float offset keeps the whole distance, rows the drag passed shift one slot the other way, out-of-range start and zero row height are inert |
 | `player/QueueSummaryTest` | 12 | **V1.2**: position is 1-based, `remaining` counts only tracks *after* the current one while `remainingSeconds` includes what is left of it, a stale position clamps to the current track's own length, minute rounding crosses into hours |
@@ -344,6 +348,52 @@ explains the root causes behind them.
 `NeonTokensTest` is the same idea for the visual layer: it recomputes WCAG
 contrast over the *brightest possible* aurora composite on every palette, so a
 future "make it pop more" tweak cannot silently drop body text below AA.
+
+---
+
+## V1.3.0 — Twelve hundred songs, and nothing worth opening (`versionCode = 15`)
+
+V1.1.6 gave the library an album page. V1.2 made browsing it cheap. Neither
+answered the question a large library actually asks: *what do I play tonight?*
+A list of 1,200 songs sorted by title is not an answer, and the app was loading
+it four times a second while the user scrolled past it.
+
+**Four shelves that nobody maintains.** `SmartCollections` derives four lists
+from the library plus the play log — 最近添加 / 最常播放 / 从未播放 / 很久没听 —
+sized at thirty each, and recomputed whenever the tracks, the log or the
+playlists change. They are not playlists: nothing is stored, nothing is named,
+nothing can be edited. Three decisions are worth the words:
+
+- `dateAdded = 0` means *unknown*, not 1970. Treating it as "very new" puts the
+  entire library on the recently-added shelf the first time a user upgrades from
+  a version that never recorded the timestamp, and a shelf holding everything is
+  not a shelf.
+- 从未播放 stays empty until at least one track has a play. On a fresh install
+  every track is unplayed, so the shelf would be the whole library — the one
+  thing the user can already see.
+- 很久没听 requires a play *and* staleness (`lastPlayedAt in 1 until now - 90d`).
+  A track never played is not forgotten, it is merely unheard; the two shelves
+  overlap only where the definition says they should.
+
+Order is fixed, not "smart": a shelf that moves between visits is a shelf the
+user has to find again. Empty shelves drop themselves, so a library with no play
+history shows one row instead of four.
+
+**One search, five kinds of answer.** The home toolbar's field only ever
+filtered the list underneath it — typing a playlist's name found nothing, and
+typing an album's name found its tracks but not the album. `UnifiedSearch` runs
+one query and splits the answer: tracks, favourites, albums, artists, playlists.
+Two rules keep it honest. Matching happens in exactly one place — `LocalIndex`,
+the pre-lowered index from V1.2 — and the search page receives the already
+filtered tracks; re-matching in `UnifiedSearch` would be a second implementation
+of "what counts as a hit" that could drift from the first. And albums/artists
+are grouped from the *matched* tracks, because the question is "which of my
+albums contain this", not "list my albums". A favourite already listed under
+歌曲 is dropped from 收藏 — one song appearing twice on one page reads as a bug.
+
+Shelves play their own thirty songs, not the library from there onward. "Play
+最常播放" means those thirty; letting the queue continue into the rest of the
+library would make the shelf meaningless one track later.
 
 ---
 

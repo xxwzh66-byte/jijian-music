@@ -28,6 +28,7 @@ import com.lxmusic.android.ui.components.PlayerSkin
 import com.lxmusic.android.ui.components.toast
 import com.lxmusic.android.ui.screens.NowPlayingScreen
 import com.lxmusic.android.ui.screens.QueueScreen
+import com.lxmusic.android.ui.screens.SearchScreen
 import com.lxmusic.android.ui.screens.SettingsScreen
 import com.lxmusic.android.ui.screens.StatsScreen
 import com.lxmusic.android.ui.screens.FolderManagerScreen
@@ -131,6 +132,10 @@ fun LxApp(viewModel: MainViewModel) {
                 GroupDetailHost(viewModel = viewModel, routes = routeStack, onBack = { viewModel.closeGroup() })
             },
         )
+        // 搜索排在专辑页之后：从搜索结果点进一张专辑，专辑页要盖在搜索页上面。
+        add(CurtainSpec(Route.Search.id, isOpen(Route.Search), { viewModel.closeSearch() }) {
+            SearchScreen(viewModel = viewModel, onBack = { viewModel.closeSearch() })
+        })
         add(CurtainSpec(Route.Queue.id, isOpen(Route.Queue), { viewModel.closeQueue() }) {
             QueueScreen(viewModel = viewModel, onBack = { viewModel.closeQueue() })
         })

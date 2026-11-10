@@ -33,6 +33,17 @@ sealed interface Route {
         override val id: String get() = "queue"
     }
 
+    /**
+     * The unified search page.
+     *
+     * A page rather than a mode of the home list: it searches across tracks,
+     * favourites, albums, artists and playlists at once, and the home list only
+     * ever had one of those.
+     */
+    data object Search : Route {
+        override val id: String get() = "search"
+    }
+
     data object Equalizer : Route {
         override val id: String get() = "equalizer"
     }

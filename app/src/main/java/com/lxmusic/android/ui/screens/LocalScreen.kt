@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import com.lxmusic.android.local.LocalGroup
 import com.lxmusic.android.local.LocalSort
 import com.lxmusic.android.local.MusicGroup
+import com.lxmusic.android.local.SmartCollection
 import com.lxmusic.android.ui.MainViewModel
 import com.lxmusic.android.ui.components.Cover
 import com.lxmusic.android.ui.components.HintIconButton
@@ -90,6 +91,13 @@ fun LocalScreen(viewModel: MainViewModel, onLongPress: (MusicInfo) -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(OledTokens.spaceXs))
+            // 顶栏那个输入框只过滤当前列表；跨收藏/歌单/专辑的搜索是另一页。
+            HintIconButton(
+                icon = Icons.Default.Search,
+                contentDescription = "全局搜索",
+                hint = "搜歌曲、专辑、歌手、歌单",
+                onClick = { viewModel.openSearch() },
+            )
             SortMenu(current = state.sort, onSelect = viewModel::setLocalSort)
             HintIconButton(
                 icon = Icons.Default.CreateNewFolder,
@@ -132,6 +140,17 @@ fun LocalScreen(viewModel: MainViewModel, onLongPress: (MusicInfo) -> Unit) {
                 val at = state.allTracks.indexOfFirst { it.id == music.id }
                 if (at >= 0) viewModel.playLocal(at) else viewModel.resumeLastPlayed()
             })
+        }
+        // 合集只在用户在"歌曲"视图、且没有输入搜索词时出现：正在搜索的人要的是
+        // 结果列表，不是又一层推荐；看专辑/歌手的人也已经在按自己的方式浏览。
+        if (state.query.isBlank() && state.group == LocalGroup.SONGS) {
+            val collections by viewModel.collections.collectAsState()
+            if (collections.isNotEmpty()) {
+                CollectionRail(
+                    collections = collections,
+                    onPlay = { viewModel.playCollection(it) },
+                )
+            }
         }
         SectionHeader(title = "本地音乐", count = state.allTracks.size)
 
@@ -288,6 +307,70 @@ private fun SortMenu(current: LocalSort, onSelect: (LocalSort) -> Unit) {
                     text = { Text(sort.label + if (sort == current) "  ✓" else "") },
                     onClick = { onSelect(sort); open = false },
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 自动合集的横滑条。
+ *
+ * 四个架子的内容全是从库里算出来的（最近添加 / 最常播放 / 从未播放 / 很久没听），
+ * 没有一个是用户手工建的。点一下就把整个架子丢进播放队列——它是一张「现在就听」
+ * 的唱片，不是一个筛选器，所以没有"打开看看"这一层。
+ *
+ * 架子数量随库里状态变化（播放记录为空时"从未播放"整架不出现），所以这里不做
+ * 固定四格，有几个铺几个。
+ */
+@Composable
+private fun CollectionRail(
+    collections: List<SmartCollection>,
+    onPlay: (SmartCollection) -> Unit,
+) {
+    Column {
+        Text(
+            "为你挑的",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = OledTokens.screenMargin, vertical = OledTokens.spaceSm),
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = OledTokens.screenMargin),
+            horizontalArrangement = Arrangement.spacedBy(OledTokens.spaceSm),
+        ) {
+            items(collections, key = { it.key }) { shelf ->
+                Column(
+                    Modifier
+                        .width(148.dp)
+                        .clip(RoundedCornerShape(OledTokens.radiusMd))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                        .clickable { onPlay(shelf) }
+                        .padding(OledTokens.spaceMd),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(OledTokens.spaceXs))
+                        Text(
+                            shelf.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Spacer(Modifier.height(OledTokens.spaceXs))
+                    Text(
+                        shelf.subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
