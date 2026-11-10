@@ -1,10 +1,10 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 16 / versionName "1.4.0"**
-> 报告版本：**V1.4.0**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 94 个 .kt；`app/src/test/java` 41 个 .kt / **411 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.4.0-vc16.apk`（release 签名，**3,559,492 B**；
-> SHA-256 `6c52379e99d44781fcff3cca262730fd78e7561554d02fe0474ee78b3da1991f`）
+> 交接版本：**versionCode 17 / versionName "1.4.1"**
+> 报告版本：**V1.4.1**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 94 个 .kt；`app/src/test/java` 41 个 .kt / **412 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.4.1-vc17.apk`（release 签名，**3,559,492 B**；
+> SHA-256 `645991fb09552a877cdb69ef2b62cf4e2804448cc878c0cbb57c4fd87dab736a`）
 
 ---
 
@@ -34,6 +34,13 @@
 - **V1.3 找得到**：四张没人维护的架子（最近添加 / 最常播放 / 从未播放 / 很久没听）
   从曲库加播放记录现算，尺寸各三十首、顺序固定、空了就自己消失；一次搜索返回五种
   答案（歌曲 / 收藏 / 专辑 / 歌手 / 歌单），匹配只在 `LocalIndex` 一处实现。见第十八节
+- **V1.4 沉浸**：歌词每一行都成了可点的跳转目标（`onSeekTo` 参数从 V5 起就存在、
+  却一直没被调用），播放页菜单里能就地调字号与偏移；平板上右栏不再固定 45%——
+  专辑页占一半、播放页占 45%、没有可显示的东西时把宽度还给列表；列表每行合并成
+  一句话，动词随动作变。见第十九节
+- **V1.4.1 首页减负**：「为你挑的」四张自动合集收起（`SHOW_SMART_COLLECTIONS`
+  一个开关，代码与 17 个测试都在），「最近在听」右侧加 X 可关掉并落进
+  `AppSettings.showRecentRail`。见第二十节
 - **V1.0.1 耳机按键修复**：media3 的 `seekToPrevious()` 有两条路会变成「重播当前曲」——
   位置超过 `getMaxSeekToPreviousPosition()`（默认 3s），或 `getPreviousIndex()` 返回
   `-1`。V1.0 只关了前者；V1.0.1 让抽签**永不返回 -1**，把后者也堵掉。
@@ -41,7 +48,7 @@
   `player/QueueMirror.kt`（镜像 playlist 的五步收在一处），替代 `PlayerController`
   里八处复制粘贴。见第九节「V1.0.1 变更」
 - **播放内核**：Media3 ExoPlayer 1.4.1 + `MediaSessionService`
-- **持久化**：Room 2.6.1（**v6**；V1.1.6 删了 `song_list`/`list_item` 两张死表）+ DataStore Preferences（30 KEY）
+- **持久化**：Room 2.6.1（**v6**；V1.1.6 删了 `song_list`/`list_item` 两张死表）+ DataStore Preferences（31 KEY）
 - **构建**：Gradle 8.7 + AGP 8.5.2 + Kotlin 2.0.20，Groovy DSL
 - **minSdk 24 / targetSdk 34 / compileSdk 34**
 - **包名**：`com.lxmusic.android`（debug 变体加后缀 `.debug`）
@@ -531,7 +538,7 @@ V1.0 的修法只补了一半。
 
 ## 十、测试
 
-**411 项 / 41 个测试类 / 0 失败**（V1.4.0 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
+**412 项 / 41 个测试类 / 0 失败**（V1.4.1 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
 **不需要设备**。
 
 > **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类；V1.1.1/1.1.2 → 235 项 / 26 类；V1.1.3 → 230 项 / 26 类；V1.1.4 → 229 项 / 26 类（删访问令牌 2 项、加自动检查 1 项）**（`PlayHistoryTest` 9 项随
@@ -544,6 +551,7 @@ V1.0 的修法只补了一半。
 > `CoverTierTest` 9、`QueueSummaryTest` 12、`QueueDragTest` 13）；
 > **V1.3.0 → 382 项 / 38 类**（新增 `SmartCollectionsTest` 17、`UnifiedSearchTest` 15）。
 > **V1.4.0 → 411 项 / 41 类**（新增 `TrackDescriptionTest` 12、`LyricTuningTest` 11、`WidePaneTest` 6）。
+> **V1.4.1 → 412 项 / 41 类**（`SettingsRoundTripTest` 10 → 11，新增 `showRecentRail` 默认值与往返）。
 > V1.0 之前的基线（144/17 → 214/25）见 `git log`。
 
 | 测试类 | 项数 | 覆盖 |
@@ -580,7 +588,7 @@ V1.0 的修法只补了一半。
 | `SafMusicScannerTest` | 5 | SAF 扫描 |
 | `UpdateCheckerTest` | 11 | **V1.0.2**：release tag 的版本比较（去 `v` 前缀、数字分段、预发布后缀排序）+ GitHub release JSON 解析（取首个 .apk 资产、字段缺失降级、标题为空回落 tag） |
 | `SettingsTest` | 5 | 设置默认值与枚举取值 |
-| `SettingsRoundTripTest` | 11 | 写入侧与读取侧用同一批 `KEY_*` 往返——每个 EQ 字段 + 枚举回落 + 上次播放指针，堵住「均衡器不保存」那类默认值掩盖的缺陷 |
+| `SettingsRoundTripTest` | 11 | 写入侧与读取侧用同一批 `KEY_*` 往返——每个 EQ 字段 + 枚举回落 + 上次播放指针，堵住「均衡器不保存」那类默认值掩盖的缺陷；**V1.4.1** 加一条 `showRecentRail`：默认开、关掉后读回来仍是关的（这一项的存在意义是「最近在听」的关闭是偏好不是一次性 UI 状态） |
 | `QueueIndexTest` | 5 | 队列槽位只有在该槽位的 **id** 就是正在播的那首时才算数（在线队列 `playIndex(3)` 被报成 0 的缺陷） |
 | `LocalTrackMapperTest` | 4 | 曲目映射 |
 | `PlayerSkinTest` | 4 | 皮肤解析与未知值回落 |
@@ -601,7 +609,7 @@ V1.0 的修法只补了一半。
 `_probe_stall.ps1` 是「位置冻住」的长播探针，需要模拟器在线）：
 
 ```powershell
-& python _cnt.py     # files=29 tests=273 failures=0 errors=0
+& python _cnt.py     # files=41 tests=412 failures=0 errors=0
 ```
 
 V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路径。
@@ -635,11 +643,11 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 
 - [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\02_开发工具链\android-sdk` 存在
 - [ ] 确认 `subst X: "D:\demo\01_项目代码"` 已生效（否则 Kotlin 编译守护进程会崩，见第二节）
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 411 测试 0 失败
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 412 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.4.0-vc16.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.4.1-vc17.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---
@@ -651,10 +659,10 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 bash /d/demo/_bx4.sh assembleRelease versionedApk versionedDebugApk testDebugUnitTest
 
 # 看 APK 版本（别只看字节数：1.1.3/1.1.4/1.1.5 的 release 包都恰好是 16,098,025 B）
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.4.0-vc16.apk | grep versionCode
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.4.1-vc17.apk | grep versionCode
 
 # 验签
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.4.0-vc16.apk
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.4.1-vc17.apk
 
 # 重新生成搜索 bundle
 cd D:\demo\lx-builder; node build.mjs
@@ -1173,5 +1181,80 @@ Box(Modifier.size(48.dp).clickable(role = Role.Button) { ... }, contentAlignment
   静默退出，`adb devices` 始终为空，`-gpu swiftshader_indirect` / `-accel off` /
   `-wipe-data` / 新建 AVD 全部复现。V1.1.8 起实机验证一律退化为
   「JVM 单测 + dex/APK 静态核验」。
+
+---
+
+## 二十、V1.4.1 设计与架构记录
+
+这一版没有新功能。它做的是把 V1.3 / V1.4 铺在首页上的东西收回去：用户的原话是
+「为你挑的，这段功能的代码先屏蔽掉。然后最近在听，旁边，添加一个 x」。
+
+### 1. 「为你挑的」收起用的是开关，不是删除
+
+四张自动合集（最近添加 / 最常播放 / 从未播放 / 很久没听）不再铺在首页。但一行代码
+都没删：
+
+- `local/SmartCollections.kt` —— 纯计算 object，`SmartCollectionsTest` 17 项照跑
+- `ui/screens/LocalScreen.kt` 的 `CollectionRail` —— 组件还在
+- `MediaLibraryStore.rebuildCollections()` —— 仍然填充 `_collections`，只是没人读
+
+控制点是文件顶部一个常量：
+
+```kotlin
+private const val SHOW_SMART_COLLECTIONS = false
+```
+
+**为什么是开关而不是 `git revert`**：这几张架子的判断本身是对的（`dateAdded = 0`
+不是 1970、一次都没播过时「从未播放」整架为空、次数相同比最近），错的只是「默认
+占首页」。删掉会让那 17 项测试一起消失，而那 17 项测的是真正的产品判断。留一个
+常量，相当于把决策写进代码里，而不是写进 commit message。
+
+`MediaLibraryStore` 里那半截每次扫描都跑的 `playRecords(0L, now)` 聚合照旧执行——
+多花一次全表读。如果要省掉，得把 `rebuildCollections` 的调用点也包进同一个常量判断，
+但那样一来开关就变成两处，改回 `true` 时容易漏掉一处。**宁可多算一次也不留半开
+状态。**
+
+### 2. 「最近在听」的关闭是偏好，不是 UI 状态
+
+那一排封面标题右侧加了 X。和下面的架子不同，它不是用户自己排的东西，所以关掉之后
+必须能在别处重新打开——落到 `AppSettings.showRecentRail`（DataStore 第 31 个键），
+设置页「音乐库」分区里有一个「首页显示「最近在听」」。
+
+默认 `true`。默认 `false` 等于新装用户永远看不到这条回头路，而曲库刚扫进来的那几天
+正是它最有用的时候。
+
+触摸目标是 48dp 的 `Box`，`Icons.Default.Clear` 18dp 居中放在里面；`contentDescription`
+写在 Box 的 `semantics` 上（"关闭「最近在听」"），图标本身是 `null`——否则读屏会
+先念一遍「Clear 图标」再念一遍描述。
+
+> **坑（第二次踩）**：`semantics { role = Role.Button }` 里那个 `role` 需要单独
+> `import androidx.compose.ui.semantics.role`，只 import `Role` 会报
+> `Unresolved reference 'role'`。V1.4 在 `Common.kt` 踩过一次，V1.4.1 在 `LocalScreen.kt`
+> 又踩了一次。
+
+### 3. 首页现在的顺序
+
+```
+[上次播放卡]            只剩一首曲目时才显示（restore 指针有效）
+[最近在听]              可关，横向 12 张
+———— (空行)
+[本地音乐]  ← SectionHeader
+[GroupChip 歌曲/专辑/歌手] [排序] [文件夹] [刷新] [全局搜索]
+[搜索框]
+[曲目 / 分组列表]
+```
+
+「为你挑的」原本在「最近在听」与「本地音乐」之间。它撤掉之后，从顶栏到用户自己的
+曲库只剩一个卡片和一排封面——这正是这一版要的结果。
+
+### 4. 这一版没有做的事
+
+- **没有删 `SmartCollections` 的测试**（理由见第 1 节）。
+- **没有在设置页给「为你挑的」也配一个开关**。合集架是开发者视角的功能，「最近在听」
+  是用户自己产生的数据；前者收回即可，后者要给回退路径。
+- **`README.md` 只保留最新版本说明**（用户要求「只保留最新版本说明，然后简写内容」）。
+  从 1129 行缩到约 230 行，V1.4.0 及以前的全部版本章节删除——历史留在
+  `docs/release-notes/` 与本报告的第十四～十九节里。
+- **没做真机验证**（同上，本机模拟器不可用）。
 
 *本报告由当前代码库实况生成，所有文件体积、行号、测试数均为实测值。*

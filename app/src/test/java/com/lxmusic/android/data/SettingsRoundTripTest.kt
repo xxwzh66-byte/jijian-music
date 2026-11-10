@@ -110,6 +110,17 @@ class SettingsRoundTripTest {
     }
 
     @Test
+    fun theRecentRailIsOnUntilTheUserTurnsItOff() {
+        // V1.4.1: 首页那排封面上的 X 写的就是这个字段。默认必须是开的——
+        // 默认关掉等于新装用户永远看不到回头路。
+        assertTrue(SettingsStore.readSettings(emptyPreferences().toMutablePreferences()).showRecentRail)
+
+        val prefs = emptyPreferences().toMutablePreferences()
+        prefs[SettingsStore.KEY_SHOW_RECENT_RAIL] = false
+        assertFalse(SettingsStore.readSettings(prefs).showRecentRail)
+    }
+
+    @Test
     fun autoCheckUpdatesDefaultsOnAndSurvivesAWrite() {
         // V1.1.4: 默认开着（进 app 就查一次），关掉之后必须读回 false——
         // 键名写错会静默退回默认 true，用户会以为开关没生效。

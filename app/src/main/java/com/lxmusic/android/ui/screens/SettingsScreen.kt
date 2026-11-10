@@ -243,6 +243,15 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                         onCheckedChange = viewModel::setReadEmbeddedCover,
                     )
                 }
+                item {
+                    // V1.4.1: 「最近在听」那一排也能从这里重新打开——首页上的 X
+                    // 是一键收起，不能只有收起没有放开。
+                    SwitchRow(
+                        title = "首页显示「最近在听」",
+                        checked = s.showRecentRail,
+                        onCheckedChange = viewModel::setShowRecentRail,
+                    )
+                }
             }
 
             // ---------------- backup ----------------

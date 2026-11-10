@@ -421,6 +421,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setPlayerSkin(skin: String) = settingsStore.setPlayerSkin(skin)
     fun setShowPlayerMeta(on: Boolean) = settingsStore.setShowPlayerMeta(on)
 
+    /** V1.4.1: 首页「最近在听」这一排的显示开关。 */
+    fun setShowRecentRail(on: Boolean) = settingsStore.setShowRecentRail(on)
+
     /** Registers a persisted SAF tree permission and rescans. */
     fun addScanFolder(treeUri: String) {
         val ctx = getApplication<Application>()

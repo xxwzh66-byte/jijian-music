@@ -48,6 +48,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lxmusic.android.local.LocalGroup
@@ -70,11 +74,21 @@ import com.lxmusic.android.ui.components.toast
 import com.lxmusic.android.ui.neon.NeonHairline
 import com.lxmusic.android.ui.theme.OledTokens
 
+/**
+ * V1.4.1：首页智能合集架的总开关。
+ *
+ * 代码与测试都还在（`SmartCollections` / `CollectionRail` / `SmartCollectionsTest`），
+ * 只是不再铺在首页上。要恢复就把这里改成 `true`——不需要动别的地方。
+ */
+private const val SHOW_SMART_COLLECTIONS = false
+
 @Composable
 fun LocalScreen(viewModel: MainViewModel, onLongPress: (MusicInfo) -> Unit) {
     val state by viewModel.local.collectAsState()
     // V5.3-2: one-tap continue-listening card for the last played track.
     val lastPlayed by viewModel.lastPlayed.collectAsState()
+    // V1.4.1: 「最近在听」是可以关掉的——它和下面那些架子不同，不是用户自己排的。
+    val settings by viewModel.settings.collectAsState()
     // V6.0: 正在播的那一行要能认出来。只取 id，避免整首歌对象变化触发整列表重组。
     val nowPlayingId = viewModel.player.collectAsState().value.current?.id
     Column(Modifier.fillMaxSize()) {
@@ -136,16 +150,21 @@ fun LocalScreen(viewModel: MainViewModel, onLongPress: (MusicInfo) -> Unit) {
         if (lastPlayed != null) {
             LastPlayedCard(lastPlayed!!, onClick = { viewModel.resumeLastPlayed() })
         }
-        if (recent.isNotEmpty()) {
-            RecentRail(recent, onClick = { music ->
-                // 在完整本地队列里播它，保住"上一首/下一首"的上下文。
-                val at = state.allTracks.indexOfFirst { it.id == music.id }
-                if (at >= 0) viewModel.playLocal(at) else viewModel.resumeLastPlayed()
-            })
+        if (recent.isNotEmpty() && settings.showRecentRail) {
+            RecentRail(
+                recent = recent,
+                onPlay = { music ->
+                    // 在完整本地队列里播它，保住"上一首/下一首"的上下文。
+                    val at = state.allTracks.indexOfFirst { it.id == music.id }
+                    if (at >= 0) viewModel.playLocal(at) else viewModel.resumeLastPlayed()
+                },
+                onDismiss = { viewModel.setShowRecentRail(false) },
+            )
         }
-        // 合集只在用户在"歌曲"视图、且没有输入搜索词时出现：正在搜索的人要的是
+        // V1.4.1：合集架暂时收起（代码留着，开关拨回来即可恢复）。
+        // 原来的条件：在"歌曲"视图、且没有搜索词时才出现——正在搜索的人要的是
         // 结果列表，不是又一层推荐；看专辑/歌手的人也已经在按自己的方式浏览。
-        if (state.query.isBlank() && state.group == LocalGroup.SONGS) {
+        if (SHOW_SMART_COLLECTIONS && state.query.isBlank() && state.group == LocalGroup.SONGS) {
             val collections by viewModel.collections.collectAsState()
             if (collections.isNotEmpty()) {
                 CollectionRail(
@@ -388,14 +407,42 @@ private fun CollectionRail(
  * 但让"我最近在听什么"一眼可见。封面缺失时退回首字圆形占位。
  */
 @Composable
-private fun RecentRail(recent: List<MusicInfo>, onClick: (MusicInfo) -> Unit) {
+private fun RecentRail(
+    recent: List<MusicInfo>,
+    onPlay: (MusicInfo) -> Unit,
+    onDismiss: () -> Unit,
+) {
     Column {
-        Text(
-            "最近在听",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = OledTokens.screenMargin, vertical = OledTokens.spaceSm),
-        )
+        Row(
+            Modifier.fillMaxWidth().padding(start = OledTokens.screenMargin, end = OledTokens.spaceXs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "最近在听",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f).padding(vertical = OledTokens.spaceSm),
+            )
+            // V1.4.1: 右侧 X 直接把这一排收掉（也可以在设置里重新打开）。
+            // 48dp 触摸区，图标 18dp——同一排的封面有 96dp，视觉不必等大。
+            Box(
+                Modifier
+                    .size(48.dp)
+                    .clickable(onClick = onDismiss)
+                    .semantics {
+                        contentDescription = "关闭「最近在听」"
+                        role = Role.Button
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.Clear,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
         LazyRow(
             contentPadding = PaddingValues(horizontal = OledTokens.screenMargin),
             horizontalArrangement = Arrangement.spacedBy(OledTokens.spaceSm),
@@ -406,7 +453,7 @@ private fun RecentRail(recent: List<MusicInfo>, onClick: (MusicInfo) -> Unit) {
                     modifier = Modifier
                         .width(96.dp)
                         .clip(RoundedCornerShape(OledTokens.radiusMd))
-                        .clickable { onClick(music) }
+                        .clickable { onPlay(music) }
                         .describedAs(TrackDescription.row(music))
                         .padding(bottom = OledTokens.spaceXs),
                 ) {

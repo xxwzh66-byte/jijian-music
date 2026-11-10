@@ -66,8 +66,13 @@ plugins {
 // 了七八个版本，却从来没被调用过），播放页菜单里就地调字号与偏移；平板上专辑页
 // 与播放页并排进右栏，不再盖住列表；列表里每一行、每一张封面、每一个玻璃按钮
 // 都有了读屏能念出来的名字，触摸目标统一到 48dp。包名与签名不变，可从 1.3.0 覆盖安装。
-ext.appVersionCode = 16
-ext.appVersionName = "1.4.0"
+// V1.4.1: 首页减负。V1.3 铺上去的「为你挑的」四张合集架收起（代码、纯逻辑与
+// 17 个测试都留着，`LocalScreen.SHOW_SMART_COLLECTIONS` 改回 true 即恢复），
+// 「最近在听」右侧加了 X——它和下面的架子不同，不是用户自己排的，关掉之后
+// 能在设置里重新打开（偏好落 DataStore，不是一次性的 UI 状态）。
+// 包名与签名不变，可从 1.4.0 覆盖安装。
+ext.appVersionCode = 17
+ext.appVersionName = "1.4.1"
 
 android {
     namespace = "com.lxmusic.android"

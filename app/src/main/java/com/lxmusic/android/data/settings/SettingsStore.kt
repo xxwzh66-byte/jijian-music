@@ -85,6 +85,14 @@ data class AppSettings(
     /** V1.1.4: 进入应用时自动检查更新。关掉之后只有设置页按钮会发起检查。 */
     val autoCheckUpdates: Boolean = true,
 
+    /**
+     * V1.4.1: 首页「最近在听」那一排封面。
+     *
+     * 它是 homepage 上唯一一个不是"用户自己挑的"区块——不想要的人得能一次关掉，
+     * 而且关了之后要能在设置里再打开（所以是偏好，不是一次性的 UI 状态）。
+     */
+    val showRecentRail: Boolean = true,
+
     val pendingDeletes: Set<String> = emptySet(),
 
     /** V1.1.0: 卡死看门狗阈值（毫秒）。默认值即 V6.1 调好的 8s/20s。 */
@@ -183,6 +191,9 @@ class SettingsStore private constructor(context: Context) {
 
     fun setPendingDeletes(ids: Set<String>) = edit { it[KEY_PENDING_DELETES] = ids }
 
+    /** V1.4.1: 首页「最近在听」这一排的显示开关。 */
+    fun setShowRecentRail(on: Boolean) = update { it.copy(showRecentRail = on) }
+
     /** V1.1.0: 卡死看门狗阈值。 */
 
     fun addScanFolder(uri: String) = edit { prefs ->
@@ -280,6 +291,7 @@ class SettingsStore private constructor(context: Context) {
             prefs[KEY_EQ_LOUDNESS] = s.eq.loudnessMb
             prefs[KEY_LAST_UPDATE_CHECK] = s.lastUpdateCheckAt
             prefs[KEY_AUTO_CHECK_UPDATES] = s.autoCheckUpdates
+            prefs[KEY_SHOW_RECENT_RAIL] = s.showRecentRail
             prefs[KEY_PENDING_DELETES] = s.pendingDeletes
             prefs[KEY_WATCHDOG_STALL] = s.watchdogStallMs
             prefs[KEY_WATCHDOG_BUFFERING] = s.watchdogBufferingMs
@@ -322,6 +334,7 @@ class SettingsStore private constructor(context: Context) {
             ),
             lastUpdateCheckAt = this[KEY_LAST_UPDATE_CHECK] ?: 0L,
             autoCheckUpdates = this[KEY_AUTO_CHECK_UPDATES] ?: true,
+            showRecentRail = this[KEY_SHOW_RECENT_RAIL] ?: true,
             pendingDeletes = this[KEY_PENDING_DELETES] ?: emptySet(),
             watchdogStallMs = this[KEY_WATCHDOG_STALL] ?: 8_000L,
             watchdogBufferingMs = this[KEY_WATCHDOG_BUFFERING] ?: 20_000L,
@@ -356,6 +369,7 @@ class SettingsStore private constructor(context: Context) {
         /** V1.0.3: 启动静默检查更新的节流时间戳。 */
         internal val KEY_LAST_UPDATE_CHECK = longPreferencesKey("last_update_check_at")
         internal val KEY_AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
+        internal val KEY_SHOW_RECENT_RAIL = booleanPreferencesKey("show_recent_rail")
         internal val KEY_PENDING_DELETES = stringSetPreferencesKey("pending_deletes")
         internal val KEY_WATCHDOG_STALL = longPreferencesKey("watchdog_stall_ms")
         internal val KEY_WATCHDOG_BUFFERING = longPreferencesKey("watchdog_buffering_ms")
