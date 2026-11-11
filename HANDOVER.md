@@ -4,7 +4,7 @@
 > 报告版本：**V1.4.2**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
 > 代码规模：`app/src/main/java` 94 个 .kt；`app/src/test/java` 41 个 .kt / **415 项测试 0 失败**
 > 产物：`build/apk/jijian-music-1.4.2-vc18.apk`（release 签名，**3,559,492 B**；
-> SHA-256 `13978fb2468ced59c12dc3b21306e7c21cd0a8d1ab3e1f1725fbdceb7257b4d3`）
+> SHA-256 `01c1249ce009b7eae5a1bb74dfd6e923ee9c994c827165ddde949c408214f014`）
 
 ---
 
