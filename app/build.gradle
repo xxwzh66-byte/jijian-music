@@ -71,8 +71,16 @@ plugins {
 // 「最近在听」右侧加了 X——它和下面的架子不同，不是用户自己排的，关掉之后
 // 能在设置里重新打开（偏好落 DataStore，不是一次性的 UI 状态）。
 // 包名与签名不变，可从 1.4.0 覆盖安装。
-ext.appVersionCode = 17
-ext.appVersionName = "1.4.1"
+// V1.4.2: 随机播放的抽签修一次崩溃。`pickOther` 原来用
+// `size - exclude.count { it in 0 until size }` 预分配候选数组，一旦传进来的
+// 排除数组里有重复下标（队列正被编辑时 `intArrayOf(current, lastTrack)` 会
+// 凑出两个相同的数），两首队列上候选数算成 0、更旧的队列上算成负数，
+// `IntArray(负数)` 在播放线程抛 NegativeArraySizeException。改为单个
+// `banned()` 判定：越界不算禁用、重复无害。同时把「不做近期去重窗口」写成
+// 显式决定——随机播放允许同一首歌在几步之内再次出现。包名与签名不变，
+// 可从 1.4.1 覆盖安装。
+ext.appVersionCode = 18
+ext.appVersionName = "1.4.2"
 
 android {
     namespace = "com.lxmusic.android"

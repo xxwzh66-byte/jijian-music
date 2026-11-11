@@ -83,4 +83,64 @@ class RandomShuffleTest {
             assertEquals(0, RandomShuffle.pickOther(2, intArrayOf(1), Random(seed)))
         }
     }
+
+    /**
+     * V1.4.2: the exclusion array used to be counted, not deduplicated.
+     *
+     * `previousIndex` passes `intArrayOf(current, lastTrack)`. When the queue is
+     * being edited, `lastTrack` can equal `current`, so the same index arrives
+     * twice. The old candidate size was `size - exclude.count { ... }`, which on
+     * a two-track queue became `2 - 2 = 0` and on a stale queue went negative -
+     * `IntArray(negative)` throws `NegativeArraySizeException` on the playback
+     * thread. Deduplicating first is the fix; this test pins it.
+     */
+    @Test
+    fun duplicateExclusionsDoNotBlowUpTheCandidateSize() {
+        for (seed in 0 until 200) {
+            assertEquals(
+                "the same index twice must not turn into a negative array size",
+                1,
+                RandomShuffle.pickOther(2, intArrayOf(0, 0), Random(seed)),
+            )
+            assertEquals(0, RandomShuffle.pickOther(2, intArrayOf(1, 1), Random(seed)))
+            assertTrue(
+                "a duplicate that is also out of range must be ignored",
+                RandomShuffle.pickOther(2, intArrayOf(0, 0, 99), Random(seed)) == 1,
+            )
+        }
+    }
+
+    /**
+     * V1.4.2 explicit decision: there is no "recently played" window.
+     *
+     * Only the current track (and, for "previous", the track that just finished)
+     * is excluded. Every other index stays reachable no matter how recently it
+     * played - the user asked for a random mode that allows the same song to come
+     * back within a few presses. A window would silently override that.
+     */
+    @Test
+    fun anIndexThatJustPlayedIsStillReachable() {
+        val size = 4
+        val hits = IntArray(size)
+        for (seed in 0 until 2_000) {
+            hits[RandomShuffle.pickOther(size, intArrayOf(0), Random(seed))]++
+        }
+        assertTrue("index 1 must be drawable immediately after playing", hits[1] > 0)
+        assertTrue("index 2 must be drawable immediately after playing", hits[2] > 0)
+        assertTrue("index 3 must be drawable immediately after playing", hits[3] > 0)
+        assertEquals("the current track stays excluded", 0, hits[0])
+    }
+
+    @Test
+    fun outOfRangeExclusionsAreIgnoredRatherThanReserved() {
+        // A stale index from a longer queue must not eat a slot: `size` is 3 and
+        // index 7 does not exist, so the draw stays uniform over 0..2.
+        val hits = IntArray(3)
+        for (seed in 0 until 2_000) {
+            hits[RandomShuffle.pickOther(3, intArrayOf(7), Random(seed))]++
+        }
+        for (index in 0..2) {
+            assertTrue("index $index must remain reachable", hits[index] > 0)
+        }
+    }
 }

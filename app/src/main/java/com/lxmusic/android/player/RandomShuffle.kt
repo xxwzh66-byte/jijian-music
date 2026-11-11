@@ -30,18 +30,50 @@ object RandomShuffle {
      * 先抽一次再看是否落在禁用集合里，是为了让分布保持均匀——用
      * `while (pick in exclude)` 重抽在 `size == exclude.size` 时会死循环，
      * 而「把候选压成数组再抽」在多线程里每次都要分配。
+     *
+     * ## [exclude] 只装「按下去会立刻看出问题」的下标
+     *
+     * 调用方只会传两个东西：当前这首（下一首不能是它，否则按钮像没反应），
+     * 以及上一首要额外避开的刚播完那首（否则按回去听到刚才那首，同样像没生
+     * 效）。**不会**传「最近播过的若干首」——那是一条没写在界面上的「近期不重
+     * 复」规则，加进来之后随机播放就不再允许同一首歌在几步之内再次出现，而
+     * 用户要的随机本来就是允许重复的。V1.4.2 把这条写成了显式决定。
+     *
+     * ## V1.4.2：`exclude` 先去重、再过滤越界
+     *
+     * 旧写法用 `size - exclude.count { it in 0 until size }` 算候选数。一旦
+     * `exclude` 里出现重复值（`intArrayOf(current, lastTrack)` 在队列正被编辑
+     * 时可能凑出两个相同下标），`size - 2` 在 `size == 2` 下变成 0 或负数，
+     * `IntArray(负数)` 抛 `NegativeArraySizeException`。那是一次只在「队列编辑
+     * 与随机按键交错」时才出现的崩溃，不该依赖调用方保证不重复。
      */
     fun pickOther(size: Int, exclude: IntArray, random: Random = Random.Default): Int {
         if (size <= 0) return -1
-        var pick = random.nextInt(size)
-        if (exclude.isEmpty()) return pick
-        if (pick !in exclude) return pick
+        val pick = random.nextInt(size)
+        if (!banned(pick, exclude, size)) return pick
         // 被禁了：把候选压成紧凑数组再抽一次，保证不会无限重抽。
-        val candidates = IntArray(size - exclude.count { it in 0 until size })
+        val candidates = ArrayList<Int>(size)
+        for (i in 0 until size) if (!banned(i, exclude, size)) candidates.add(i)
+        // 全被禁了（退化尺寸）：退回已经抽到的那个，调用方拿到的是范围内的数。
         if (candidates.isEmpty()) return pick
-        var at = 0
-        for (i in 0 until size) if (i !in exclude) candidates[at++] = i
         return candidates[random.nextInt(candidates.size)]
+    }
+
+    /**
+     * [value] 是否被 [exclude] 禁掉。
+     *
+     * 越界值一律不算数（`exclude` 里可能残留着队列缩短前的下标），重复值天然
+     * 无害——这里只回答「是不是」，不做计数。旧写法用
+     * `size - exclude.count { it in 0 until size }` 预分配候选数组，一旦
+     * `exclude` 里出现两个相同下标（`intArrayOf(current, lastTrack)` 在队列正
+     * 被编辑时可能凑出来），候选数会被算成负数，`IntArray(负数)` 抛
+     * `NegativeArraySizeException`。那是一次只在「队列编辑与随机按键交错」时
+     * 才出现的崩溃，不该依赖调用方保证不重复。
+     */
+    private fun banned(value: Int, exclude: IntArray, size: Int): Boolean {
+        if (value !in 0 until size) return false
+        for (v in exclude) if (v == value) return true
+        return false
     }
 }
 

@@ -1,6 +1,6 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.4.1** (`versionCode = 17`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.4.2** (`versionCode = 18`)
 
 一个**纯本地**的极简音乐播放器。起手参考
 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的音源架构，
@@ -162,7 +162,7 @@ app/src/main/java/com/lxmusic/android/
 ./gradlew :app:testDebugUnitTest
 ```
 
-**412 项单元测试 / 41 个类 / 0 失败。**
+**415 项单元测试 / 41 个类 / 0 失败。**
 
 纯逻辑优先：抽签、队列、歌词解析、设置键往返、备份指纹、扫描复用、搜索索引、
 可访问性文案、平板右栏归属都是不需要 Android 的纯函数。`RandomShuffle*` 五个类
@@ -177,23 +177,34 @@ app/src/main/java/com/lxmusic/android/
 
 ---
 
-## V1.4.1 — 首页减掉两排 (`versionCode = 17`)
+## V1.4.2 — 随机播放不再挑不起 (`versionCode = 18`)
 
-**「为你挑的」收起。** V1.3 铺在首页的四张自动合集（最近添加 / 最常播放 /
-从未播放 / 很久没听）不再显示。代码没删：`SmartCollections`（纯计算）、
-`CollectionRail`（组件）与 17 个测试都在，把 `LocalScreen.SHOW_SMART_COLLECTIONS`
-改回 `true` 即恢复——一个开关，不动别的地方。
+**抽签修一次崩溃。** `RandomShuffle.pickOther` 原来用
+`IntArray(size - exclude.count { it in 0 until size })` 预分配候选数组。排除数组
+里一旦出现重复下标（`previousIndex` 传的是 `intArrayOf(current, lastTrack)`，队列
+正被编辑时两者会相等），两首队列上候选数算成 `0`、更旧的队列上算成负数，
+`IntArray(负数)` 在播放线程抛 `NegativeArraySizeException`——一次只在「队列编辑与
+随机按键交错」时才出现的崩溃，而且不靠日志几乎抓不到。
 
-**「最近在听」可以关掉。** 那排封面右侧多了一个 X，点了就收走。它和下面的架子
-不同，不是用户自己排的东西，所以关掉是**偏好**而不是一次性的 UI 状态：落在
-`AppSettings.showRecentRail`，设置页「音乐库」里能重新打开。默认开——默认关等于
-新装用户永远看不到回头路。
+现在只剩一个判定：
 
-两条改的是同一个判断：首页该放用户自己挑的东西。自动算出来的架子在库还很小的时候
-有意义，库养起来之后它们只是把「我点的歌」往下推。
+```kotlin
+private fun banned(value: Int, exclude: IntArray, size: Int): Boolean {
+    if (value !in 0 until size) return false
+    for (v in exclude) if (v == value) return true
+    return false
+}
+```
 
-**411 → 412 项**：新增 1 个 `SettingsRoundTripTest` 用例（`showRecentRail` 的默认值
-与写入往返），其余不变。
+越界的下标不算禁用（队列缩短后残留的旧下标不该白占一个槽），重复的下标天然
+无害。调用点不再需要保证 `exclude` 干净。
+
+**明确不做「近期去重」。** 有人会想给 `exclude` 加一个「最近 N 首不许重复」的
+窗口。这一版把它写成显式决定：不做。一条看不到的窗口规则会把「随机」换成「轮转
+的近亲」——用户要的可重复性被悄悄拿掉，而界面上没有任何地方说明这件事。
+
+**412 → 415 项**：`RandomShuffleTest` 新增 3 个用例——重复下标不炸候选数组、
+刚播过的下标仍然抽得到（钉住「无窗口」这条决定）、越界下标不占槽位。
 
 ---
 
