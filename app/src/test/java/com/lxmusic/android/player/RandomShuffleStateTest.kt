@@ -217,16 +217,35 @@ class RandomShuffleStateTest {
     // --- copies ---------------------------------------------------------------
 
     @Test
-    fun aCopyIsASnapshotNotASharedView() {
-        // ExoPlayer clones the state on every playlist edit and may hold the
-        // clone for a while. Writing the clone's memo must not rewrite the
-        // parent's answer mid-decision.
+    fun aCopySharesTheMemoSoBothSidesGoStaleTogether() {
+        // V1.4.3: ExoPlayer keeps the clone for the whole session and answers
+        // the notification from it. A snapshot meant the app cleared its memo
+        // on track change while the installed clone kept handing back the
+        // answer drawn for the previous track - "shuffle is on, the next track
+        // is always the same one". Both sides now share one memo.
         val (s, random) = state()
         val parentAnswer = s.nextIndex(6, 1, random)
         val clone = s.copy()
+        assertEquals("a copy must answer like its parent", parentAnswer, clone.nextIndex(6, 1, random))
+
         s.onTrackStarted(6, parentAnswer)
-        assertEquals("the clone must keep its own snapshot", parentAnswer, clone.nextIndex(6, 1, random))
-        assertEquals(0, s.memoised)
+
+        assertEquals("started must clear the shared memo", 0, s.memoised)
+        val again = clone.nextIndex(6, 1, random)
+        assertNotEquals("the clone must draw again after a track starts", parentAnswer, again)
+    }
+
+    @Test
+    fun everyCurrentIndexKeepsItsOwnAnswer() {
+        // One decision asks several questions: the notification wants the
+        // successor of the playing track, the MediaPeriodQueue previews the
+        // ones after it. A single memo slot let one overwrite the other.
+        val (s, random) = state()
+        val fromOne = s.nextIndex(6, 1, random)
+        val fromFour = s.nextIndex(6, 4, random)
+        assertEquals(fromOne, s.nextIndex(6, 1, random))
+        assertEquals(fromFour, s.nextIndex(6, 4, random))
+        assertTrue("both answers must be remembered", s.memoised >= 2)
     }
 
     @Test

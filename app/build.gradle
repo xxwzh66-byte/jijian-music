@@ -79,8 +79,16 @@ plugins {
 // `banned()` 判定：越界不算禁用、重复无害。同时把「不做近期去重窗口」写成
 // 显式决定——随机播放允许同一首歌在几步之内再次出现。包名与签名不变，
 // 可从 1.4.1 覆盖安装。
-ext.appVersionCode = 18
-ext.appVersionName = "1.4.2"
+// V1.4.3: 随机播放「一开就卡在同一首」的根因不是一个 bug 而是两个。抽样
+// 缓存原本是单槽位，而一次换歌里 media3 会用不同的 current 问好几遍，后一个
+// 答案覆盖前一个；更要命的是 `copy()` 给克隆体的是快照，而装进 ExoPlayer 的
+// 正是那份克隆体，它永远收不到 `onTrackStarted`，于是一直返回换歌前抽的下标。
+// 现在缓存是一本按 current 分槽的账，副本与父实例共享同一本，清账两边一起清。
+// 同时把播放页切样式的三处卡顿按「绘制阶段求值」处理：唱片旋转与长按拖动
+// 改走 graphicsLayer，歌词行不再动画字号（改成缩放），Crossfade 从 300ms
+// 收到 200ms。包名与签名不变，可从 1.4.2 覆盖安装。
+ext.appVersionCode = 19
+ext.appVersionName = "1.4.3"
 
 android {
     namespace = "com.lxmusic.android"

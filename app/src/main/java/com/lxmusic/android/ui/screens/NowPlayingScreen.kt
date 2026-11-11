@@ -181,7 +181,13 @@ fun NowPlayingScreen(
 
             // ---------- 中央舞台 ----------
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Crossfade(targetState = skin, label = "skin") { sk ->
+                Crossfade(
+                    targetState = skin,
+                    // V1.4.3: 默认 300ms 期间两套舞台（封面 + Canvas + 动画）同时
+                    // 在跑，正是切样式那一下的卡顿来源。200ms 已经够遮住切换。
+                    animationSpec = tween(200),
+                    label = "skin",
+                ) { sk ->
                     val swipe = Modifier.pointerInput(sk) {
                         var acc = 0f
                         detectHorizontalDragGestures(

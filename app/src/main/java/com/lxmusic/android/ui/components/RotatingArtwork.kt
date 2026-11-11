@@ -23,7 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -74,7 +74,7 @@ fun RotatingArtwork(
     }
 
     // Tonearm lift/drop (I1): 1f = resting off the disc, 0f = needle down.
-    val armDrop by animateFloatAsState(
+    val armDrop = animateFloatAsState(
         targetValue = if (spinning) 0f else 1f,
         animationSpec = tween(300, easing = FastOutSlowInEasing),
         label = "tonearm",
@@ -86,13 +86,15 @@ fun RotatingArtwork(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // V1.4.3: rotationZ 在绘制阶段求值。读进 composition 会让这棵
+                // 子树（凹槽 Canvas + 封面 + 主轴孔）每帧重组，动画一开就抖。
+                .graphicsLayer { rotationZ = rotation.value }
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
                         colors = listOf(Color(0xFF3A3A3A), Color(0xFF141414), Color(0xFF0A0A0A)),
                     )
-                )
-                .rotate(rotation.value),
+                ),
             contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.fillMaxSize()) {
@@ -190,7 +192,7 @@ fun RotatingArtwork(
         if (toneArm) {
             ToneArm(
                 discSize = size,
-                drop = armDrop,
+                drop = { armDrop.value },
                 tint = if (toneOn) tone.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.85f),
                 modifier = Modifier.align(Alignment.Center),
             )
@@ -200,12 +202,13 @@ fun RotatingArtwork(
 
 /**
  * A pivoting tonearm drawn with Canvas. The arm rotates around its rear pivot;
- * [drop] 0f = needle on the record, 1f = lifted to rest.
+ * [drop] returns 0f with the needle on the record, 1f when lifted to rest.
  */
 @Composable
 private fun ToneArm(
     discSize: Dp,
-    drop: Float,
+    /** 0f = 唱针落在盘上，1f = 抬起。按需读，避免动画期间重组。 */
+    drop: () -> Float,
     tint: Color,
     modifier: Modifier = Modifier,
 ) {
@@ -219,7 +222,7 @@ private fun ToneArm(
             r - r * 0.62f * 0.707f,   // disc center - (0.62R * sin45) up
         )
         // -34 deg lifted, -18 deg dropped (negative = counter-clockwise).
-        val angleDeg = -34f + (1f - drop) * 16f
+        val angleDeg = -34f + (1f - drop()) * 16f
         scopeRotate(degrees = angleDeg, pivot = pivot) {
             // counterweight behind the pivot
             drawCircle(

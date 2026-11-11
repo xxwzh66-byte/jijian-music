@@ -23,7 +23,11 @@ import kotlin.random.Random
  * order's memo as a side effect of building a candidate: the very next
  * `getNextIndex` on the installed order returned a different track, and the
  * speculative path could also shift the answer the app had already shown the
- * user. Each clone now takes a snapshot instead.
+ * user.
+ *
+ * V1.4.3: the clone and its parent share one memo now. A snapshot was worse in
+ * the other direction - the clone ExoPlayer kept never heard `onTrackStarted`,
+ * so it kept handing back the answer it had drawn before the last track change.
  */
 class RandomShuffleCloneTest {
 
@@ -132,18 +136,51 @@ class RandomShuffleCloneTest {
     }
 
     @Test
-    fun aSnapshotDoesNotLeakBackIntoTheParent() {
+    fun aCloneHearsTheTrackStartedToo() {
+        // V1.4.3: the clone that ExoPlayer keeps is the one answering the
+        // notification. It must go stale at the same moment the app does,
+        // otherwise the next press replays the answer drawn for the previous
+        // track - which reads as "shuffle is on, the next track is always the
+        // same one".
         val state = state()
-        val parent = RandomShuffleOrder(8, state, Random(3))
-        val parentAnswer = parent.getNextIndex(0)
+        val installed = RandomShuffleOrder(8, state, Random(3))
+        val clone = installed.cloneAndInsert(0, 0)
 
-        val child = parent.cloneAndInsert(0, 1)
-        child.getNextIndex(0)
-        child.getNextIndex(1)
-        child.getNextIndex(2)
+        val before = clone.getNextIndex(0)
+        state.onTrackStarted(8, before)
 
-        assertEquals("parent memo must be untouched", 1, state.memoised())
-        assertEquals("parent must still answer the same way", parentAnswer, parent.getNextIndex(0))
+        val after = clone.getNextIndex(before)
+        assertTrue("a clone must draw again after a track starts", after in 0 until 8)
+        assertNotEquals("the next track must not replay the old answer", before, after)
+    }
+
+    @Test
+    fun everyQuestionGetsItsOwnSlot() {
+        // media3 asks with different `current` indices inside one decision:
+        // the notification wants the current track's successor while the
+        // MediaPeriodQueue previews the ones after it. A single memo slot let
+        // the second question overwrite the first answer.
+        val state = state()
+        val order = RandomShuffleOrder(8, state, Random(11))
+
+        val fromZero = order.getNextIndex(0)
+        val fromThree = order.getNextIndex(3)
+
+        assertEquals("the first question must stay answered", fromZero, order.getNextIndex(0))
+        assertEquals("the second question must stay answered", fromThree, order.getNextIndex(3))
+        assertTrue(state.memoised() >= 2)
+    }
+
+    @Test
+    fun invalidateBlindsTheCloneAsWell() {
+        val state = state()
+        val installed = RandomShuffleOrder(8, state, Random(9))
+        val clone = installed.cloneAndInsert(0, 0)
+
+        clone.getNextIndex(2)
+        state.invalidate()
+
+        assertEquals("invalidate must reach the shared memo", 0, state.memoised())
     }
 
     /** The memo of the live state, which the clones must never touch. */

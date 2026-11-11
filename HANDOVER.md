@@ -1,10 +1,10 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 18 / versionName "1.4.2"**
-> 报告版本：**V1.4.2**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 94 个 .kt；`app/src/test/java` 41 个 .kt / **415 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.4.2-vc18.apk`（release 签名，**3,559,492 B**；
-> SHA-256 `01c1249ce009b7eae5a1bb74dfd6e923ee9c994c827165ddde949c408214f014`）
+> 交接版本：**versionCode 19 / versionName "1.4.3"**
+> 报告版本：**V1.4.3**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 94 个 .kt；`app/src/test/java` 41 个 .kt / **418 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.4.3-vc19.apk`（release 签名，**3,559,492 B**；
+> SHA-256 `c44fe8a4fc01ef2fb8a458f26d4ac2115b4a1f77fca4198ae6bdaf56ed6d928f`）
 
 ---
 
@@ -44,6 +44,10 @@
 - **V1.4.2 随机播放去崩溃**：`pickOther` 把「候选数组预分配 + 数量计算」换成一个
   `banned()` 判定——越界下标不算禁用、重复下标无害。同时把「不做近期去重窗口」写成
   显式决定（随机播放允许同一首歌在几步之内再次出现）。见第二十一节
+- **V1.4.3 随机播放不再卡同一首 + 播放页切样式不卡**：单槽位备忘录取代成按
+  `current` 分槽的 `ShuffleMemo`，且 `copy()` 改为**共享**同一本账——装进 ExoPlayer
+  的那份克隆体终于也能被 `onTrackStarted` 弄脏。切样式三处卡顿全部是「在
+  composition 里读动画值」，改走 `graphicsLayer` / 传 lambda / 200ms Crossfade。见第二十二节
 - **V1.0.1 耳机按键修复**：media3 的 `seekToPrevious()` 有两条路会变成「重播当前曲」——
   位置超过 `getMaxSeekToPreviousPosition()`（默认 3s），或 `getPreviousIndex()` 返回
   `-1`。V1.0 只关了前者；V1.0.1 让抽签**永不返回 -1**，把后者也堵掉。
@@ -544,7 +548,7 @@ V1.0 的修法只补了一半。
 
 ## 十、测试
 
-**415 项 / 41 个测试类 / 0 失败**（V1.4.2 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
+**418 项 / 41 个测试类 / 0 失败**（V1.4.3 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
 **不需要设备**。
 
 > **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类；V1.1.1/1.1.2 → 235 项 / 26 类；V1.1.3 → 230 项 / 26 类；V1.1.4 → 229 项 / 26 类（删访问令牌 2 项、加自动检查 1 项）**（`PlayHistoryTest` 9 项随
@@ -560,13 +564,17 @@ V1.0 的修法只补了一半。
 > **V1.4.1 → 412 项 / 41 类**（`SettingsRoundTripTest` 10 → 11，新增 `showRecentRail` 默认值与往返）。
 > **V1.4.2 → 415 项 / 41 类**（`RandomShuffleTest` 6 → 9：重复排除下标不炸候选数组、
 > 刚播过的下标仍抽得到、越界下标不占槽位）。
+> **V1.4.3 → 418 项 / 41 类**（`RandomShuffleStateTest` 18 → 19：`aCopyIsASnapshotNotASharedView`
+> 改写为 `aCopySharesTheMemoSoBothSidesGoStaleTogether`，新增 `everyCurrentIndexKeepsItsOwnAnswer`；
+> `RandomShuffleCloneTest` 7 → 9：删 `aSnapshotDoesNotLeakBackIntoTheParent`，新增
+> `aCloneHearsTheTrackStartedToo` 与 `invalidateBlindsTheCloneAsWell`）。
 > V1.0 之前的基线（144/17 → 214/25）见 `git log`。
 
 | 测试类 | 项数 | 覆盖 |
 |---|---|---|
 | `EmbeddedLyricsTest` | 18 | ID3v2/FLAC/Ogg/MP4 内嵌歌词解析 |
 | `PlayStatsTest` | 17 | 日/周分桶、排行、时区（固定 `Asia/Shanghai`） |
-| `RandomShuffleStateTest` | 18 | **V1.0.1 抽签契约**：next 排除当前曲、prev 同样排除且额外避开刚播完的那首、一次抽签在下一首开始前反复问答案不变、`onTrackStarted` 清空缓存、2 首队列两个方向都能换 |
+| `RandomShuffleStateTest` | 19 | **抽签契约**：next 排除当前曲、prev 同样排除且额外避开刚播完的那首、一次抽签在下一首开始前反复问答案不变、**每个 `current` 各有槽位（V1.4.3）**、`onTrackStarted` 清空缓存、**副本与父实例共享同一本账（V1.4.3）**、2 首队列两个方向都能换 |
 | `LocalLibraryTest` | 15 | 分组、搜索、排序 |
 | `TrackDescriptionTest` | 12 | **V1.4**：一行一句话，而不是三个独立 `Text`；动词随动作变——分组行说「打开」绝不说「播放」，迷你播放器说「打开播放页」；空字段不留孤零零的分隔符，空标题降级成「未知曲目」；队列的两字符串重载与模型重载一致 |
 | `LyricTuningTest` | 11 | **V1.4**：加减档位落在与设置页滑块完全相同的 0.7×–1.6× / ±500 ms 区间（否则滑块打开时显示一个它自己拖不到的值）；连续 ±5% 停在两位小数，两处都打印 `1.35×`；偏移文本带显式正负号，`120 ms` 单独看不出方向；到边界时按钮自报 disabled |
@@ -617,7 +625,7 @@ V1.0 的修法只补了一半。
 `_probe_stall.ps1` 是「位置冻住」的长播探针，需要模拟器在线）：
 
 ```powershell
-& python _cnt.py     # files=41 tests=415 failures=0 errors=0
+& python _cnt.py     # files=41 tests=418 failures=0 errors=0
 ```
 
 V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路径。
@@ -651,11 +659,11 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 
 - [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\02_开发工具链\android-sdk` 存在
 - [ ] 确认 `subst X: "D:\demo\01_项目代码"` 已生效（否则 Kotlin 编译守护进程会崩，见第二节）
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 415 测试 0 失败
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 418 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.4.2-vc18.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.4.3-vc19.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---
@@ -667,10 +675,10 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 bash /d/demo/_bx4.sh assembleRelease versionedApk versionedDebugApk testDebugUnitTest
 
 # 看 APK 版本（别只看字节数：1.1.3/1.1.4/1.1.5 的 release 包都恰好是 16,098,025 B）
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.4.2-vc18.apk | grep versionCode
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.4.3-vc19.apk | grep versionCode
 
 # 验签
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.4.2-vc18.apk
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.4.3-vc19.apk
 
 # 重新生成搜索 bundle
 cd D:\demo\lx-builder; node build.mjs
@@ -1344,3 +1352,96 @@ private fun banned(value: Int, exclude: IntArray, size: Int): Boolean {
   过滤）、4.2（明确不做窗口），§12 表格数字更新，§13 增一条「近期去重窗口」，
   §14 落地顺序加第 7 条。
 - **没做真机验证**（本机模拟器在 WHPX 初始化后静默退出，见第二节）。
+
+---
+
+## 二十二、V1.4.3 设计与架构记录
+
+### 1. 「开关随机后下一首必然是同一首」不是一个 bug，是两个
+
+两个缺陷单独都不会造成这个现象，叠在一起才致命。
+
+**第一个：单槽位缓存。** `RandomShuffleState` 原本只有 `nextPick` / `previousPick`
+两个整数。但一次换歌里 media3 会问好几遍：通知栏要播放中曲目的下一首、
+`MediaPeriodQueue` 要预览后面几首、自动续播再问一次。这些问题的 `current` 各不
+相同，而缓存只有一个位置——后一个答案覆盖前一个，同一时刻两个屏幕上可能拿到
+互相矛盾的下标。
+
+**第二个：副本拿到的是快照。** `copy()` 原本把 `nextPick` / `previousPick` /
+`lastTrack` 逐个抄给克隆体。问题在于 `MediaSourceList.setShuffleOrder` 会
+`cloneAndClear().cloneAndInsert(...)` 修长度不匹配，而**装进 ExoPlayer、替通知栏
+作答的正是那份克隆体**；`onTrackStarted` 只在 `PlayerController` 里对父实例调用
+（`onMediaItemTransition` 与 `playIndex` 两条路径），克隆体永远收不到。于是父实例
+每次换歌都清账重抽，克隆体却一直端着换歌前抽的那个下标——用户按「下一首」，走的
+是通知栏/媒体会话那条线，拿到的就是同一个答案。
+
+**修法**：缓存换成按 `current` 分槽的账本，副本共享同一个账本对象：
+
+```kotlin
+@Synchronized fun copy(): RandomShuffleState = RandomShuffleState().also { clone ->
+    clone.memo = memo          // 共享，不是快照
+    clone.generation = generation
+}
+```
+
+`ShuffleMemo` 里两本 `HashMap<Int, Int>`（next / previous）按 `current` 建槽，槽满
+`MAX_SLOTS = 64` 时整本清空（一个队列的长度远小于 64，清空只在异常输入下发生）。
+`started()` 同时清两本并记 `lastTrack`，`clear()` 全清。`memoised` 的语义随之从
+「有没有抽定」变成「记账条数」，测试断言跟着改。
+
+### 2. 上一版把「快照」写成了测试契约
+
+V1.4.2 的 `RandomShuffleCloneTest` 里有一条 `aSnapshotDoesNotLeakBackIntoTheParent`，
+断言父实例的备忘「不被克隆体污染」。这条用例**把这次要修的 bug 当成了正确行为**。
+这次改写为 `aCopySharesTheMemoSoBothSidesGoStaleTogether`：父与克隆先给同一答案，
+`onTrackStarted` 之后两边一起变盲，克隆体重抽出一个不同的下标。
+
+教训：**契约变了，测试必须跟着改，而不是改代码去迁就测试**。反过来说，如果一条
+测试的存在理由是「描述现状」，那它保护的是 bug 而不是行为。
+
+### 3. 切样式的三处卡顿，全是「在 composition 里读动画值」
+
+| 位置 | 原来 | 现在 |
+| --- | --- | --- |
+| `RotatingArtwork` 唱片 | `.rotate(rotation.value)` | `.graphicsLayer { rotationZ = ... }` |
+| `RotatingArtwork` 唱臂 | `drop: Float` | `drop: () -> Float`，Canvas 内求值 |
+| `LyricView` 歌词行 | 动画 `fontSize` / `lineHeight` | 动画 `scaleX/scaleY`，字号固定 |
+| `NowPlayingScreen` 切台 | Crossfade 默认 300ms | `tween(200)` |
+
+`Modifier.rotate(x)` 的 `x` 是 composition 参数，每帧变化就每帧重组宿主载体。
+唱片那棵子树里有一次 30–50 圈的凹槽 `drawCircle` 循环、一张封面和主轴孔——60fps
+下等于每秒重建 60 次整棵树。`graphicsLayer {}` 的 lambda 在**绘制阶段**求值，重组
+一次之后只动 matrix。
+
+唱臂的 `drop` 同理：`animateFloatAsState` 的结果用 `by` 解构就等于在 composition
+里读值，300ms 内每帧重组。改成传 `() -> Float` 让 Canvas 自己去取。
+
+歌词行原来动画 `fontSize` 与 `lineHeight`——字号是**布局属性**，每帧变化意味着
+每帧重新排版一行字（测量 + 换行 + 定位）。改成固定字号 + `graphicsLayer` 缩放，
+只有绘制阶段变。
+
+Crossfade 默认 300ms，期间两套舞台（各自的封面 `AsyncImage`、Canvas、动画）同时
+存在且都在跑。收到 200ms 既减少重叠时长，也让切换更跟手。
+
+### 4. 编译坑：`drop = { armDrop }` 不行
+
+改成 lambda 参数后第一版写成 `drop = { armDrop }`，编译报
+
+```
+Argument type mismatch: actual type is 'androidx.compose.runtime.State<kotlin.Float>',
+but 'kotlin.Float' was expected   (RotatingArtwork.kt:195)
+```
+
+因为 `animateFloatAsState` 返回 `State<Float>`，去掉 `by` 之后必须显式 `.value`：
+`drop = { armDrop.value }`。
+
+### 5. 这一版没有做的事
+
+- **仍然不做近期去重窗口**（V1.4.2 的显式决定保持不变）。`exclude` 只装当前曲，
+  `previousIndex` 额外避开刚播完的那首。
+- **没上 `animatable` 的帧同步优化**（`withFrameNanos` 手写旋转）。`Animatable` +
+  `graphicsLayer` 已经足够，再往下走会把「暂停时定格」的逻辑弄复杂。
+- **没改 `LyricView` 的自动滚动**（`animateScrollToItem`）。它每次换行触发一次，
+  频率低，不是卡顿来源。
+- **没做真机验证**：本机模拟器在 WHPX 初始化后静默退出（见第二节），这一版的
+  两个修复都是靠单元测试 + 代码路径推导确认的。

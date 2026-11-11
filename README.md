@@ -1,6 +1,6 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.4.2** (`versionCode = 18`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.4.3** (`versionCode = 19`)
 
 一个**纯本地**的极简音乐播放器。起手参考
 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的音源架构，
@@ -162,7 +162,7 @@ app/src/main/java/com/lxmusic/android/
 ./gradlew :app:testDebugUnitTest
 ```
 
-**415 项单元测试 / 41 个类 / 0 失败。**
+**418 项单元测试 / 41 个类 / 0 失败。**
 
 纯逻辑优先：抽签、队列、歌词解析、设置键往返、备份指纹、扫描复用、搜索索引、
 可访问性文案、平板右栏归属都是不需要 Android 的纯函数。`RandomShuffle*` 五个类
@@ -177,34 +177,45 @@ app/src/main/java/com/lxmusic/android/
 
 ---
 
-## V1.4.2 — 随机播放不再挑不起 (`versionCode = 18`)
+## V1.4.3 — 同一个答案答给所有人 (`versionCode = 19`)
 
-**抽签修一次崩溃。** `RandomShuffle.pickOther` 原来用
-`IntArray(size - exclude.count { it in 0 until size })` 预分配候选数组。排除数组
-里一旦出现重复下标（`previousIndex` 传的是 `intArrayOf(current, lastTrack)`，队列
-正被编辑时两者会相等），两首队列上候选数算成 `0`、更旧的队列上算成负数，
-`IntArray(负数)` 在播放线程抛 `NegativeArraySizeException`——一次只在「队列编辑与
-随机按键交错」时才出现的崩溃，而且不靠日志几乎抓不到。
+**随机播放「一开就卡在同一首」，根因是两个。** 抽样缓存原本是单槽位：一次换歌
+里 media3 会用不同的 `current` 问好几遍（通知栏要当前曲的下一首、`MediaPeriodQueue`
+要预览后面几首、自动续播再问一次），后一个答案把前一个覆盖掉，同一时刻两个屏幕
+可能拿到互相矛盾的下标。更要命的是 `copy()` 给克隆体的是**快照**，而真正装进
+ExoPlayer、替通知栏作答的正是那份克隆体——它永远收不到 `onTrackStarted`，于是
+一直把换歌前抽的那个下标交出来。「下一首」于是每次都落在同一首歌上。
 
-现在只剩一个判定：
+现在缓存是一本按 `current` 分槽的账（`ShuffleMemo`），副本与父实例**共享同一本**：
+父实例清账，克隆体同步变盲，两边一起重抽。
 
 ```kotlin
-private fun banned(value: Int, exclude: IntArray, size: Int): Boolean {
-    if (value !in 0 until size) return false
-    for (v in exclude) if (v == value) return true
-    return false
+@Synchronized fun copy(): RandomShuffleState = RandomShuffleState().also { clone ->
+    clone.memo = memo
+    clone.generation = generation
 }
 ```
 
-越界的下标不算禁用（队列缩短后残留的旧下标不该白占一个槽），重复的下标天然
-无害。调用点不再需要保证 `exclude` 干净。
+上一版把「快照」当契约写进了测试，这次把那条用例改写为
+`aCopySharesTheMemoSoBothSidesGoStaleTogether`——**契约变了，测试必须跟着改，
+而不是反过来**。
 
-**明确不做「近期去重」。** 有人会想给 `exclude` 加一个「最近 N 首不许重复」的
-窗口。这一版把它写成显式决定：不做。一条看不到的窗口规则会把「随机」换成「轮转
-的近亲」——用户要的可重复性被悄悄拿掉，而界面上没有任何地方说明这件事。
+**播放页切样式的三处卡顿，全部是「在 composition 里读动画值」。**
 
-**412 → 415 项**：`RandomShuffleTest` 新增 3 个用例——重复下标不炸候选数组、
-刚播过的下标仍然抽得到（钉住「无窗口」这条决定）、越界下标不占槽位。
+| 位置 | 原来 | 现在 |
+| --- | --- | --- |
+| `RotatingArtwork` 唱片 | `.rotate(rotation.value)` | `.graphicsLayer { rotationZ = ... }` |
+| `RotatingArtwork` 唱臂 | `drop: Float` 参数 | `drop: () -> Float`，Canvas 内求值 |
+| `LyricView` 歌词行 | 动画 `fontSize` / `lineHeight` | 动画 `scaleX/scaleY`，字号固定 |
+| `NowPlayingScreen` 切台 | Crossfade 默认 300ms | `tween(200)` |
+
+读进 composition 意味着载体每帧重组：唱片那棵子树里有一次 30–50 圈的凹槽
+`drawCircle` 循环、一张封面和主轴孔，60fps 下等于每秒重建 60 次。字号是布局
+属性，动画它等于每帧重新排版一行字；改成缩放后只有绘制阶段变化。
+
+**415 → 418 项**：`RandomShuffleStateTest` 重写 1 条、新增 1 条（每个 `current`
+各有槽位），`RandomShuffleCloneTest` 删 1 条、新增 2 条（克隆体也听得到
+`onTrackStarted`、`invalidate` 让克隆体一起变盲）。
 
 ---
 

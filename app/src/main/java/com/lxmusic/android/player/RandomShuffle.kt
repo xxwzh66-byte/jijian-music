@@ -107,20 +107,16 @@ object RandomShuffle {
  */
 class RandomShuffleState {
 
-    /** 当前这首「下一首」已经抽定的目标，-1 表示还没抽。 */
-    private var nextPick = -1
-
-    /** 当前这首「上一首」已经抽定的目标，-1 表示还没抽。 */
-    private var previousPick = -1
-
     /**
-     * 最近一次真正开始播的下标，-1 表示还不知道。
+     * 抽样账本，**被所有克隆体共享**。
      *
-     * 只用于「上一首别把我送回刚听完的那首」——不需要整条历史，一个下标就够
-     * 了，因为用户按上一首时想避开的就是刚才那一首。真正的历史栈在 V1.0.1
-     * 之后没有消费者了（见 HANDOVER 的变更记录）。
+     * 共享不是图省事：`PlayerController` 把同一个实例交给每一个
+     * [RandomShuffleOrder]，而 media3 会拿着装进 ExoPlayer 的那一份去回答
+     * 通知栏、锁屏、蓝牙和自动续播。如果克隆体各拿一份快照，那么
+     * [onTrackStarted] 清掉的只是 app 这一侧的记忆，播放器那一侧会一直用
+     * 换歌之前抽的答案——听起来就是「随机开着，下一首却总是同一首」。
      */
-    private var lastTrack = -1
+    private var memo = ShuffleMemo()
 
     /**
      * 换过多少次序（含 [invalidate]）。
@@ -143,11 +139,9 @@ class RandomShuffleState {
     fun nextIndex(size: Int, current: Int, random: Random = Random.Default): Int {
         if (size <= 1) return -1
         if (current !in 0 until size) return -1
-        val cached = nextPick
-        if (cached in 0 until size && cached != current) return cached
-        val picked = RandomShuffle.pickOther(size, intArrayOf(current), random)
-        nextPick = picked
-        return picked
+        return memo.nextFor(size, current) {
+            RandomShuffle.pickOther(size, intArrayOf(current), random)
+        }
     }
 
     /**
@@ -155,22 +149,22 @@ class RandomShuffleState {
      *
      * V1.0.1：这里不再是「周期里的前一位」。用户要的是上一次也随机，所以
      * 上一首同样是抽的；唯一的修饰是**避开刚播完的那首**
-     * （[lastTrack]），否则「上一首」会退回刚刚听完的曲子，看起来像没生效。
+     * （[ShuffleMemo.lastTrack]），否则「上一首」会退回刚刚听完的曲子，看起来
+     * 像没生效。
      */
     @Synchronized
     fun previousIndex(size: Int, current: Int, random: Random = Random.Default): Int {
         if (size <= 1) return -1
         if (current !in 0 until size) return -1
-        val cached = previousPick
-        if (cached in 0 until size && cached != current) return cached
-        val avoid = if (size > 2 && lastTrack in 0 until size && lastTrack != current) {
-            intArrayOf(current, lastTrack)
-        } else {
-            intArrayOf(current)
+        return memo.previousFor(size, current) {
+            val justPlayed = memo.lastTrack
+            val avoid = if (size > 2 && justPlayed in 0 until size && justPlayed != current) {
+                intArrayOf(current, justPlayed)
+            } else {
+                intArrayOf(current)
+            }
+            RandomShuffle.pickOther(size, avoid, random)
         }
-        val picked = RandomShuffle.pickOther(size, avoid, random)
-        previousPick = picked
-        return picked
     }
 
     /**
@@ -190,72 +184,141 @@ class RandomShuffleState {
     // ---------------- 生命周期 ----------------
 
     /**
-     * 一首歌真的开始播了——**清空抽样缓存的唯一入口**。
+     * 一首歌真的开始播了——**丢掉抽样账本的唯一入口**。
      *
      * 必须由两条换歌路径都调用：[org.androidx.media3.common.Player.Listener]
      * 的 `onMediaItemTransition`（通知栏/蓝牙/自动续播）和
      * [PlayerController.playIndex]（app 内按键、在线曲目单曲播放）。任一路径
      * 漏掉，那条路径上下一次按键就会拿到上一条路径抽的缓存，表现为「按了没
      * 反应」——按一次不动、按第二次才走。
+     *
+     * 账本是共享的，所以这里清掉之后，装进 ExoPlayer 的那一份也立刻重新抽。
      */
     @Synchronized
     fun onTrackStarted(size: Int, current: Int) {
-        if (current in 0 until size) lastTrack = current
-        nextPick = -1
-        previousPick = -1
+        memo.started(size, current)
     }
 
     /**
-     * 丢掉缓存，下一次查询重新抽。
+     * 丢掉账本，下一次查询重新抽。
      *
      * 只在「队列本身变了」或「开关随机」时调用。**不在每次换歌时调用**——
-     * 换歌走 [onTrackStarted]，那个还会顺手记住 [lastTrack]。
+     * 换歌走 [onTrackStarted]，那个还会顺手记住刚播的那首。
      */
     @Synchronized
     fun invalidate() {
-        nextPick = -1
-        previousPick = -1
-        lastTrack = -1
+        memo.clear()
         generation.bump()
     }
 
     /**
      * 当前这份随机源的版本号；[invalidate] 会让它递增。
      *
-     * 抽样缓存的变化**不算**版本变化：缓存是「同一次决策的备忘」，而
+     * 抽样账本的变化**不算**版本变化：账本是「同一次决策的备忘」，而
      * 版本号问的是「装进 ExoPlayer 的那个 order 还是不是这一份」。order 一直
-     * 转发到本实例，缓存变了下一次查询自然就看见了，不需要重装。
+     * 转发到本实例，账本变了下一次查询自然就看见了，不需要重装。
      */
     @get:Synchronized
     val version: Int get() = generation.value
 
     /**
-     * 一个独立快照，给 ExoPlayer 克隆用。
+     * 一个共享同一本账的副本，给 ExoPlayer 克隆用。
      *
      * `MediaSourceList.setShuffleOrder` 会用 `cloneAndClear().cloneAndInsert(...)`
-     * 修长度不匹配，`ExoPlayerImpl` 还可能用长度断言拒掉克隆体。被克隆的那一
-     * 份仍然在服务会话，所以缓存必须是快照而不是共享引用。
+     * 修长度不匹配，`ExoPlayerImpl` 还可能用长度断言拒掉克隆体；装进去的那
+     * 一份会长期在播放线程上回答「下一首是谁」。所以副本必须和原件看同一本
+     * 账：任何一侧听到新歌开始、任何一侧被 [invalidate]，两边同时失效。
      *
-     * [generation] 是共享的：任何一侧让版本前进，安装点都要能看见。
+     * [generation] 同样共享：任何一侧让版本前进，安装点都要能看见。
      */
     @Synchronized
     fun copy(): RandomShuffleState = RandomShuffleState().also { clone ->
-        clone.nextPick = nextPick
-        clone.previousPick = previousPick
-        clone.lastTrack = lastTrack
+        clone.memo = memo
         clone.generation = generation
     }
 
-    /** 测试用：当前是否已经有抽定的下一首。 */
+    /** 测试用：账本里已经记下的答案条数。 */
     @get:Synchronized
-    val memoised: Int get() = if (nextPick < 0) 0 else 1
+    val memoised: Int get() = memo.size
+}
+
+/**
+ * 抽样账本：按「被问的那个下标」分槽记住答案，并共享给所有克隆体。
+ *
+ * 为什么必须分槽：media3 在一次换歌里会用**不同的 current** 提问——通知栏取
+ * 当前曲的下一首、MediaPeriodQueue 预览后面几首、自动续播再问一遍。单槽位
+ * 的缓存会被后一个问题冲掉前一个，于是同一条决策前后拿到不同答案（v5.3.2 的
+ * 「卡住」），或者上一个问题的答案沉在槽里一直顶给下一条决策（V1.4.3 的
+ * 「下一首总是同一首」的反面）。分槽之后每个问题的答案各自稳定。
+ *
+ * 槽位有上限：队列里最多几十首，正常不会碰到；真被刷爆就整体清空重来，
+ * 只是多抽几次，不会出错。
+ */
+internal class ShuffleMemo {
+
+    /** key = 被问的下标，value = 抽定的答案。 */
+    private val next = HashMap<Int, Int>(8)
+    private val previous = HashMap<Int, Int>(8)
+
+    /** 最近一次真正开始播的下标，-1 表示还不知道。 */
+    var lastTrack = -1
+        private set
+
+    @Synchronized
+    fun nextFor(size: Int, current: Int, draw: () -> Int): Int =
+        slot(next, size, current, draw)
+
+    @Synchronized
+    fun previousFor(size: Int, current: Int, draw: () -> Int): Int =
+        slot(previous, size, current, draw)
+
+    /** 一首歌开始播：记住它，并让所有槽位失效。 */
+    @Synchronized
+    fun started(size: Int, current: Int) {
+        if (current in 0 until size) lastTrack = current
+        next.clear()
+        previous.clear()
+    }
+
+    /** 队列变了或开关随机：整本作废。 */
+    @Synchronized
+    fun clear() {
+        next.clear()
+        previous.clear()
+        lastTrack = -1
+    }
+
+    @get:Synchronized
+    val size: Int get() = next.size + previous.size
+
+    /**
+     * 一个槽位的取值：命中就返回，否则 [draw] 一次并记下。
+     *
+     * 抽到 `current` 自身或越界时不记账——那是退化尺寸下的兜底值，记下来会
+     * 让下一次提问拿到一个非法答案。
+     */
+    private fun slot(book: HashMap<Int, Int>, size: Int, current: Int, draw: () -> Int): Int {
+        val cached = book[current]
+        if (cached != null && cached in 0 until size && cached != current) return cached
+        val picked = draw()
+        if (picked in 0 until size && picked != current) {
+            if (book.size >= MAX_SLOTS) book.clear()
+            book[current] = picked
+        }
+        return picked
+    }
+
+    private companion object {
+        /** 槽位上限；正常队列远小于它，纯粹防脏数据。 */
+        const val MAX_SLOTS = 64
+    }
 }
 
 /**
  * 一次「版本被改写」的共享计数器。
  *
- * 为什么要单独一个对象：ExoPlayer 会拿着 [RandomShuffleState.copy] 的克隆体
- * 去服务真实会话，克隆体的缓存是独立快照，但「这份源还是不是当前版本」这个
+ * 为什么要单独一个对象：ExoPlayer 会拿着 [RandomShuffleState.copy] 的副本
+ * 去服务真实会话，副本的账本是共享的，但「这份源还是不是当前版本」这个
  * 问题必须两边答案一致。用同一个计数器实例，任何一侧改写都会让另一侧看见。
  * `@Synchronized` 保证自增对两个线程可见。
  */

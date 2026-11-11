@@ -19,6 +19,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.drawWithContent
@@ -127,6 +128,9 @@ fun LyricView(
                 label = "lyricScale",
             )
             val translation = lyric.translationFor(i)
+            // V1.4.3: 缩放走 graphicsLayer，不再乘进 fontSize / lineHeight。
+            // 字号是布局属性，动画期间每帧都要重新排版这段文字。
+            val grow = 1f + ACTIVE_GROW * scale
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 // The row is the touch target, not the two Text nodes: a
@@ -134,6 +138,10 @@ fun LyricView(
                 // must seek to the same timestamp.
                 modifier = Modifier
                     .fillMaxWidth()
+                    .graphicsLayer {
+                        scaleX = grow
+                        scaleY = grow
+                    }
                     .then(
                         if (onSeekTo != null) {
                             Modifier.lyricSeekTarget(line.text, line.timeMs, onSeekTo)
@@ -146,8 +154,8 @@ fun LyricView(
                 Text(
                     text = line.text,
                     color = color,
-                    fontSize = (16f + 4f * scale).sp * fontScale,
-                    lineHeight = (22f + 6f * scale).sp * fontScale,
+                    fontSize = BASE_TEXT_SP.sp * fontScale,
+                    lineHeight = BASE_LINE_SP.sp * fontScale,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
                     textAlign = TextAlign.Center,
                     modifier = Modifier
@@ -192,6 +200,14 @@ private fun Modifier.lyricSeekTarget(
  * V5.2-3: lyric typography metrics. The gap grows together with the active
  * line (16sp -> 20sp) so the enlarged line never touches the next one.
  */
+/**
+ * 当前行放大多少。用缩放而不是放大字号：字号一变就要重新排版，动画期间每帧
+ * 一次，长歌词列表会明显掉帧。
+ */
+private const val ACTIVE_GROW = 0.10f
+private const val BASE_TEXT_SP = 16f
+private const val BASE_LINE_SP = 22f
+
 object LyricMetrics {
     /** Base gap between lyric lines (inactive). */
     val lineGap = 14.dp + 6.dp
