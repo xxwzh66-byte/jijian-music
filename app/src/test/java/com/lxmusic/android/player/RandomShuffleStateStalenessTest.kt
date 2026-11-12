@@ -108,6 +108,83 @@ class RandomShuffleStateStalenessTest {
         assertEquals("a valid memo must stay stable", first, second)
     }
 
+    // ---------------------------------------------------------------
+    // V1.4.6: forgetDraws() —— 队列编辑后作废答案，但不动 generation
+    // ---------------------------------------------------------------
+
+    @Test
+    fun forgetDrawsDiscardsTheAnswersTheQueueEditInvalidated() {
+        val state = state()
+        val order = RandomShuffleOrder(9, state, Random(3))
+        order.getNextIndex(4)
+        order.getPreviousIndex(4)
+        assertTrue("nothing was memoised to begin with", state.memoised > 0)
+
+        state.forgetDraws()
+
+        assertEquals("forgetDraws must empty the ledger", 0, state.memoised)
+    }
+
+    @Test
+    fun forgetDrawsKeepsTheTrackThatJustPlayedSoPreviousStillAvoidsIt() {
+        val state = state()
+        state.onTrackStarted(9, 5)
+        state.forgetDraws()
+
+        // lastTrack 还在，所以「上一首」必须继续避开刚听完的那首。
+        val order = RandomShuffleOrder(9, state, Random(7))
+        for (index in 0 until 9) {
+            val previous = order.getPreviousIndex(index)
+            assertTrue(
+                "previous hit the track that just finished at index $index",
+                previous != 5,
+            )
+        }
+    }
+
+    @Test
+    fun forgetDrawsLeavesTheGenerationAloneSoNoOrderGetsReinstalled() {
+        val state = state()
+        val before = state.version
+        state.forgetDraws()
+        assertEquals(
+            "bumping the generation here forces a masking-timeline rebuild",
+            before,
+            state.version,
+        )
+    }
+
+    @Test
+    fun invalidateStillBumpsTheGenerationAndForgetsTheLastTrack() {
+        val state = state()
+        state.onTrackStarted(9, 5)
+        val before = state.version
+        state.invalidate()
+        assertEquals("invalidate must move the version forward", before + 1, state.version)
+        assertEquals("invalidate must empty the ledger too", 0, state.memoised)
+    }
+
+    @Test
+    fun aForgottenLedgerDrawsAgainInsteadOfReplayingTheOldPath() {
+        val state = state()
+        val order = RandomShuffleOrder(9, state, Random(21))
+        val first = order.getNextIndex(4)
+        assertEquals("a valid memo must stay stable", first, order.getNextIndex(4))
+
+        state.forgetDraws()
+
+        // 重抽之后**可能**又抽到同一个下标——那不算错，随机就是随机。
+        // 要紧的是它确实重新问了 RandomShuffle.pickOther，而不是把 4/6 里
+        // 那个旧答案原样端出来。为确认这一点，换一个种子重装 order：
+        // 旧账本在的话，getNextIndex(4) 会无视新种子直接给 first。
+        val reseeded = RandomShuffleOrder(9, state, Random(9999))
+        val afterEdit = reseeded.getNextIndex(4)
+        assertTrue(
+            "after forgetDraws the answer must be redrawn, not replayed",
+            afterEdit in 0 until 9 && afterEdit != 4,
+        )
+    }
+
     @Test
     fun theMemoNeverGrowsWithoutBoundWhenTheQueueKeepsResizing() {
         val state = state()

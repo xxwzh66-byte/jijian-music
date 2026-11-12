@@ -1,6 +1,6 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.4.5** (`versionCode = 20`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.4.6** (`versionCode = 21`)
 
 > **V1.4.5 起只编译、只发布 debug 版**（`com.lxmusic.android.debug`）。应用内的「下载并安装」装的就是同一个 debug 签名，能覆盖升级；正式包如果还留着旧版本，需要先卸载一次。
 
@@ -171,7 +171,7 @@ app/src/main/java/com/lxmusic/android/
 ./gradlew :app:testDebugUnitTest
 ```
 
-**417 项单元测试 / 41 个类 / 0 失败。**
+**422 项单元测试 / 41 个类 / 0 失败。**
 
 纯逻辑优先：抽签、队列、歌词解析、设置键往返、备份指纹、扫描复用、搜索索引、
 可访问性文案、平板右栏归属都是不需要 Android 的纯函数。`RandomShuffle*` 五个类
@@ -186,75 +186,76 @@ app/src/main/java/com/lxmusic/android/
 
 ---
 
-## V1.4.5 — 只发 debug，启动就查，切样式不再叠两次 (`versionCode = 20`)
+## V1.4.6 — 那张 order 一直是活的，所以一次都不该重装 (`versionCode = 21`)
 
-**四件产品决定。**
+### 这次错的是一层理解，不是一行业务
 
-「启动时自动检查更新」这个开关连它背后的 24 小时节流一起删了。开关加节流的
-实际效果是「用户以为在查，其实没查」——两个都想省网络请求的机制叠在一起，变成
-一个只在第一次启动有效的功能。现在每次进应用都静默查一次，失败和「已是最新」
-仍然退回 IDLE，不往设置页塞一条用户没要的状态。
+`setShuffleOrder` 装进 ExoPlayer 的 `RandomShuffleOrder`，每一问都转发到同一个
+`RandomShuffleState`，而账本（`ShuffleMemo`）在 `copy()` 里也是**共享**的。
+也就是说：它是一张**活视图**。队列换序、账本作废、generation 前进，它下一次
+被问就给出新答案 —— 不需要谁来重装。
 
-「更新」分区里加了**项目地址**，点了直接开
-`https://github.com/xxwzh66-byte/jijian-music`。
+既然是活的，重装在语义上就**恒等于零收益**。而重装恰恰是那个环：
 
-发版只发 debug 包（见上面「构建」）。`UpdateChecker.parseRelease` 的选包逻辑随之
-反转：从「优先 release 包」改成「优先 debug 包」，只在老 release 没有 debug 资产时
-才退回任意 apk。
+```
+setShuffleOrder → createMaskingTimeline() → PlaylistTimeline 没有 equals
+      → Timeline.equals 恒 false → onTimelineChanged → 又回来装
+```
 
-**两个真 bug。**
+V6.1 用 generation 做 memo 守卫，把无限环截成「一次开关多付一轮」；V1.4.5 又
+加了一层 1 秒 4 次的时间窗熔断去兜「多轮」。两层都是在给一个不该存在的循环
+装闸门 —— 而闸门本身有代价：熔断那条 `return false` 是在 `shuffleModeEnabled`
+被写下去**之前**返回的，于是这一轮里 ExoPlayer 根本不知道随机开着，通知栏就
+按它自带的 RNG 走，app 按键按我们的走。**两边各随机各的**，这是最难复现也最
+难解释的一类「随机播放的 bug」。
 
-「随机播放第一次启动直接卡死」是三个东西叠出来的：`QueueMirror.resync` 每次队列
-变更都回写 `shuffleModeEnabled`，而 `onQueueMutated` 本身又会触发一次安装——两条路
-各自把 ExoPlayer 的 timeline 重建一遍；`resetShuffle` 还会 `invalidate()` 随机账本，
-generation 一变 memo 守卫立刻失效，于是又必然多装一次；而装一次 order 就是造一条
-新的 masking timeline，跨进程的 `MediaController` 再把每一轮放大成主线程停顿。
-冷启动时 `backfillQueue` 正好把这些串在同一帧里发生。
-
-三处改动：
+现在守卫只比长度：
 
 ```kotlin
-// QueueMirror：只回写 repeatMode，shuffle 交给它的主人
-private fun resync(t: MirrorTarget) {
-    t.repeatMode = repeatFlag()
-    onQueueMutated()
+// V1.4.6: 只比长度，不比 generation。
+// order 是活视图，重装恒等于零收益；而重装就是那个环。
+if (installedShuffleLength == length) {
+    syncShuffleMode()
+    return true
 }
+```
 
-// PlayerController：队列变更不再作废随机账本
+长度真的变了（队列增删），旧 order 捕获的 `size` 就错了，必须换一份 —— 这是
+唯一需要重装的信号。三条退出路径（熔断 / memo 命中 / 正常装完）统一走
+`syncShuffleMode()`，模式只要和当前不一致就写一次，不再有任何一条路悄悄跳过。
+
+### 第二个缺口：账本是按下标记的
+
+V1.4.5 为了掐断上面那个环，把 `resetShuffle()` 里的 `shuffleState.invalidate()`
+删了 —— 队列变了也不作废账本。这留下一个真缺陷：`ShuffleMemo` 按**下标**记账，
+队列增删或移动之后同一个下标已经是另一首歌，旧答案虽然仍在 `0 until size`
+范围内合法，却指向一首这一次没被抽中的曲子。表现是「随机老是走那几条路」。
+
+新增 `ShuffleMemo.forgetDraws()`：扔答案、**留 `lastTrack`**、**不动
+generation**。三件事缺一不可 —— 留 `lastTrack` 是因为「上一首避开刚听完的那
+首」要靠它；不动 generation 是因为一动就逼安装点重装 order，环又回来了。
+
+```kotlin
 private fun resetShuffle() {
-    forgetInstalledOrder()
+    shuffleState.forgetDraws()
     installShuffleOrder()
 }
-
-// PlayerController：装 order 的熔断（1 秒 4 次）
-if (++installWindowCount > MAX_INSTALLS_PER_WINDOW) return false
 ```
 
-队列变短时账本里的旧下标已经被 `ShuffleMemo.slot` 的 `cached in 0 until size` 挡掉，
-不需要整本作废；真正该「重新随机」的只有用户自己按开关那一下
-（`toggleShuffle` 仍然 `invalidate()`）。熔断是兜底：正常一秒最多进两三次，边缘
-路径成环时宁可这一轮不装，也不能让主线程一直转。
+`toggleShuffle()` 仍然走 `invalidate()`（连 `lastTrack` 一起清）—— 用户按下
+开关才是真的「重新随机」，包括忘掉刚才那首。
 
-「切换样式一次性加载多次样式」的根因是 `Crossfade`：过渡期它同时组合**两套舞台**，
-唱片（凹槽 Canvas 30–50 圈 `drawCircle` + 封面 + 唱臂）和歌词列表（LazyColumn +
-每行两个动画）一起在跑，连 `pointerInput(sk)` 都各自重建一次。改成「先淡出、换、
-再淡入」之后，任一时刻只有一套舞台存在：
+### 422 → 422 项
 
-```kotlin
-stageAlpha.animateTo(0f, tween(FADE_OUT_MS, LinearEasing))
-shown = skin
-stageAlpha.animateTo(1f, tween(FADE_IN_MS, LinearEasing))
-```
+新增 5 个用例压在 `RandomShuffleStateStalenessTest` 上：`forgetDraws` 清账本、
+留 `lastTrack`（「上一首」仍避开刚播的）、不动 generation、`invalidate` 仍然
+既 bump 又清、作废后确实重抽而不是回放旧路径。
 
-顺带把滑动切歌的 `pointerInput` 从 `pointerInput(sk)` 改成 `pointerInput(Unit)`——
-它是舞台容器的手势，和里面画什么无关，没有理由随样式重建。
+本机没有可用模拟器或真机（WHPX 初始化后 qemu 静默退出），所以**改动的运行时
+行为没有被端到端验证过**，验证只到「JVM 单测 + dex/APK 静态核验」。如果实机上
+仍能复现，请抓 logcat 里的 `PlayerController` 标签 —— 正常路径现在**不该**再
+出现 `shuffle order deferred` 或 `shuffle order refused` 之外的任何一行。
 
-**418 → 417 项**：删掉 `autoCheckUpdates` 的往返用例（那个偏好已经不存在），
-`QueueMirrorTest.everyEditResetsBothModes` 改名为
-`everyEditResetsRepeatModeButLeavesShuffleToItsOwner`（契约变了，测试跟着改），
-`UpdateCheckerTest` 两条选包用例按 debug 优先重写。
-
----
 
 ## 许可
 

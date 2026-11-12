@@ -212,6 +212,18 @@ class RandomShuffleState {
     }
 
     /**
+     * V1.4.6: 队列本身变了（增删、移动、回填），但「随机」这件事没变。
+     *
+     * 作废所有按旧下标记下的答案，同时保持 generation 不动，于是安装点不会
+     * 被逼着重装 order。与 [invalidate] 的区别只有一条：这里保留
+     * `lastTrack`，`previousIndex` 的避开规则才不会因为一次队列编辑而失效。
+     */
+    @Synchronized
+    fun forgetDraws() {
+        memo.forgetDraws()
+    }
+
+    /**
      * 当前这份随机源的版本号；[invalidate] 会让它递增。
      *
      * 抽样账本的变化**不算**版本变化：账本是「同一次决策的备忘」，而
@@ -286,6 +298,27 @@ internal class ShuffleMemo {
         next.clear()
         previous.clear()
         lastTrack = -1
+    }
+
+    /**
+     * V1.4.6: 队列被编辑，只把记下的答案扔掉，保留 [lastTrack]。
+     *
+     * 为什么不能沿用 [clear]：`clear` 会连 `lastTrack` 一起清掉，于是
+     * 「上一首避开刚听完的那首」失去依据，用户会听到上一首按下去又回到刚
+     * 播过的那首。而为什么不干脆什么都不做（V1.4.5 的选择）：账本是按下标
+     * 记账的，队列增删/移动之后同一个下标已经是另一首歌，旧答案虽仍在
+     * `0 until size` 范围内、却对应着一首「用户这次没被随机到」的曲子。
+     * 账本过期不会崩，但会让随机看起来在重复同一条路径。
+     *
+     * 关键在于这里**不递增 generation**：generation 一变动，安装点的 memo
+     * 守卫就失效、必然多装一次 order、多造一条 masking timeline —— 那正是
+     * V1.4.5 掐掉的冷启动死结。账本变了下一次查询自然就重新抽，装进
+     * ExoPlayer 的那一份也共享同一本账，不需要重装。
+     */
+    @Synchronized
+    fun forgetDraws() {
+        next.clear()
+        previous.clear()
     }
 
     @get:Synchronized

@@ -93,8 +93,20 @@ plugins {
 // 都静默查一次），设置页「更新」下新增「项目地址」。随机播放修两处：队列变更
 // 不再作废随机账本（少装一次 order），装 order 加了 1 秒 4 次的熔断；播放页
 // 切样式从 Crossfade 改成「先淡出、换、再淡入」，任一时刻只有一套舞台存在。
-ext.appVersionCode = 20
-ext.appVersionName = "1.4.5"
+// V1.4.6: 随机播放的「装 order」这件事想错了一层。装进 ExoPlayer 的
+// RandomShuffleOrder 每一问都转发到同一个 RandomShuffleState，账本也是共享的
+// ——它是**活视图**，不是快照。既然是活的，重装在语义上就恒等于零收益；
+// 而重装恰恰是那个环（setShuffleOrder → createMaskingTimeline →
+// PlaylistTimeline 无 equals → onTimelineChanged → 又回来）。V6.1 用
+// generation 做守卫把环截成「多付一轮」，V1.4.5 再加时间窗熔断去兜「多轮」，
+// 两层都是在给一个不该存在的循环装闸门。现在守卫只比长度，环从根上消失。
+// 同时补两个真缺口：①队列编辑后按旧下标记下的答案会被当成本次决策的答案
+// （新长度下同一下标已经是另一首歌），新增 ShuffleMemo.forgetDraws() 扔答案、
+// 留 lastTrack、不动 generation；②熔断那条 return 以前连 shuffleModeEnabled
+// 都不交代，app 与通知栏会各随机各的，现在三条退出路径统一走 syncShuffleMode()。
+// 包名与签名不变，可从 1.4.5 覆盖安装。
+ext.appVersionCode = 21
+ext.appVersionName = "1.4.6"
 
 android {
     namespace = "com.lxmusic.android"

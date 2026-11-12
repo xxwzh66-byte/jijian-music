@@ -1,10 +1,10 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 20 / versionName "1.4.5"**
-> 报告版本：**V1.4.5**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 94 个 .kt；`app/src/test/java` 41 个 .kt / **417 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.4.5-vc20-debug.apk`（debug 签名，**23,137,110 B**；
-> SHA-256 `d9d704c9c2858fc271b57d7a9b19b9af2873840788e0cb3dee3e7e833fa2185f`）
+> 交接版本：**versionCode 21 / versionName "1.4.6"**
+> 报告版本：**V1.4.6**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 94 个 .kt；`app/src/test/java` 41 个 .kt / **422 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.4.6-vc21-debug.apk`（debug 签名，**23,260,156 B**；
+> SHA-256 `b7289fa8612ef6d8feb3c31157ac93cc92114dd709ee9b3edab347c7b6ff3140`）
 >
 > **V1.4.5 起只编译、只发布 debug 包。** 应用内的「下载并安装」必须与用户手里那份
 > 同一个签名，release 包（`jijian.keystore`）装上去必然冲突，所以发版流程不再跑
@@ -54,6 +54,15 @@
   冷启动卡死来自 `QueueMirror.resync` 回写 `shuffleModeEnabled` 与 `resetShuffle`
   的 `invalidate()` 叠成环，一并加装 order 熔断（1 秒 4 次）；播放页换样式从
   `Crossfade`（两套舞台同时存在）改成先淡出再换、再淡入。见第二十三节
+- **V1.4.6 随机播放的「装 order」想错了一层**：装进 ExoPlayer 的
+  `RandomShuffleOrder` 每问都转发到同一个 `RandomShuffleState`，账本 `ShuffleMemo`
+  在 `copy()` 里也是共享的 —— 它是**活视图**不是快照，所以重装恒等于零收益，而
+  重装正是那个环（`setShuffleOrder → createMaskingTimeline() → PlaylistTimeline
+  无 equals → onTimelineChanged → 又回来`）。守卫改成只比长度，环从根上消失。
+  另补两个真缺口：队列编辑后按旧下标记下的答案会被当成本次决策的答案
+  （`ShuffleMemo.forgetDraws()`：扔答案、留 `lastTrack`、不动 generation）；
+  熔断那条 return 以前连 `shuffleModeEnabled` 都不交代，app 与通知栏会各随机各的
+  （`syncShuffleMode()` 统一三条退出路径）。422 项测试。
 - **V1.4.3 随机播放不再卡同一首 + 播放页切样式不卡**：单槽位备忘录取代成按
   `current` 分槽的 `ShuffleMemo`，且 `copy()` 改为**共享**同一本账——装进 ExoPlayer
   的那份克隆体终于也能被 `onTrackStarted` 弄脏。切样式三处卡顿全部是「在
@@ -558,7 +567,7 @@ V1.0 的修法只补了一半。
 
 ## 十、测试
 
-**417 项 / 41 个测试类 / 0 失败**（V1.4.5 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
+**422 项 / 41 个测试类 / 0 失败**（V1.4.6 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
 **不需要设备**。
 
 > **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类；V1.1.1/1.1.2 → 235 项 / 26 类；V1.1.3 → 230 项 / 26 类；V1.1.4 → 229 项 / 26 类（删访问令牌 2 项、加自动检查 1 项）**（`PlayHistoryTest` 9 项随
@@ -578,6 +587,7 @@ V1.0 的修法只补了一半。
 > 改写为 `aCopySharesTheMemoSoBothSidesGoStaleTogether`，新增 `everyCurrentIndexKeepsItsOwnAnswer`；
 > `RandomShuffleCloneTest` 7 → 9：删 `aSnapshotDoesNotLeakBackIntoTheParent`，新增
 > `aCloneHearsTheTrackStartedToo` 与 `invalidateBlindsTheCloneAsWell`）。
+> **V1.4.6 → 422 项 / 41 类**（`RandomShuffleStateStalenessTest` +5，压在 `forgetDraws` 上）
 > **V1.4.5 → 417 项 / 41 类**（删 `SettingsRoundTripTest.autoCheckUpdatesDefaultsOnAndSurvivesAWrite`
 > 一项；`QueueMirrorTest.everyEditResetsBothModes` 改名
 > `everyEditResetsRepeatModeButLeavesShuffleToItsOwner`；`UpdateCheckerTest` 两个选包
@@ -639,7 +649,7 @@ V1.0 的修法只补了一半。
 `_probe_stall.ps1` 是「位置冻住」的长播探针，需要模拟器在线）：
 
 ```powershell
-& python _cnt.py     # files=41 tests=417 failures=0 errors=0
+& python _cnt.py     # files=41 tests=422 failures=0 errors=0
 ```
 
 V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路径。
@@ -673,11 +683,11 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 
 - [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\02_开发工具链\android-sdk` 存在
 - [ ] 确认 `subst X: "D:\demo\01_项目代码"` 已生效（否则 Kotlin 编译守护进程会崩，见第二节）
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 417 测试 0 失败
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 422 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.4.5-vc20-debug.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.4.6-vc21-debug.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---
@@ -690,10 +700,10 @@ bash /d/demo/_bx4.sh assembleDebug versionedDebugApk testDebugUnitTest
 # 发版只发 debug：从 V1.4.5 起不跑 assembleRelease / versionedApk
 
 # 看 APK 版本（别只看字节数：1.1.3/1.1.4/1.1.5 的 release 包都恰好是 16,098,025 B）
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.4.5-vc20-debug.apk | grep versionCode
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.4.6-vc21-debug.apk | grep versionCode
 
 # 验签
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.4.5-vc20-debug.apk
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.4.6-vc21-debug.apk
 
 # 重新生成搜索 bundle
 cd D:\demo\lx-builder; node build.mjs
@@ -1567,3 +1577,124 @@ LaunchedEffect(skin) {
 - **没做「跳过这个版本」**。更新仍只有「下载并安装」与「稍后」两个出口。
 - **没改 24h 之外的其它更新行为**（下载续传、SHA-256 校验、NEEDS_PERMISSION 重试
   三条都在 `UpdateStore` / `ApkDownloader` / `UpdateInstaller` 里原样保留）。
+
+---
+
+## 二十四、V1.4.6 设计与架构记录
+
+### 1. 一句话：那张 order 一直是活的
+
+`PlayerController.installShuffleOrder()` 每次 `exo.setShuffleOrder(...)` 装进去的
+是一个 `RandomShuffleOrder(size, shuffleState)`。它的八个方法全部转发到同一个
+`RandomShuffleState`，而后者的抽样账本 `ShuffleMemo` 在 `copy()` 里是**共享**的
+（V1.4.3 起）：
+
+```kotlin
+@Synchronized
+fun copy(): RandomShuffleState = RandomShuffleState().also { clone ->
+    clone.memo = memo
+    clone.generation = generation
+}
+```
+
+所以不管 media3 克隆多少份、装进播放线程的是哪一份，它们看的都是同一本账。队列
+换序、账本作废、generation 前进 —— 它下一次被问就给出新答案。
+
+**它就是一张活视图，不是快照。**
+
+### 2. 既然是活的，重装就恒等于零收益
+
+而重装恰恰是那个环：
+
+```
+setShuffleOrder
+  → ExoPlayerImpl.createMaskingTimeline()
+  → PlaylistTimeline 没有重写 equals
+  → PlaybackInfo.updatePlaybackInfo 里 Timeline.equals 恒 false
+  → 派发 onTimelineChanged
+  → 回到 installShuffleOrder
+```
+
+V6.1 的 memo 守卫是 `version == installedShuffleVersion && installedShuffleLength == length`，
+把无限环截成「一次开关最多多付一轮」；V1.4.5 又叠了一层 1 秒 4 次的
+`MAX_INSTALLS_PER_WINDOW` 熔断去兜「多轮」。**两层都是在给一个不该存在的循环装
+闸门。**
+
+V1.4.6 直接把闸门连同循环一起删掉 —— 守卫只比长度：
+
+```kotlin
+if (installedShuffleLength == length) {
+    syncShuffleMode()
+    return true
+}
+```
+
+`installedShuffleVersion` 字段整个删除。长度是唯一需要重装的信号：队列增删时旧
+order 捕获的 `size` 就错了，必须换一份；只是换序、只是账本作废，order 自己会跟上。
+
+### 3. 缺口一：熔断那条 return 把模式也吞了
+
+```kotlin
+if (++installWindowCount > MAX_INSTALLS_PER_WINDOW) {
+    Log.e(TAG, "shuffle order install throttled: ...")
+    return false          // ← 在 shuffleModeEnabled 被写下去之前就返回了
+}
+```
+
+原来的写法里，`controller?.shuffleModeEnabled = shuffle` 只在函数**末尾**执行。
+熔断提前 return，这一轮 ExoPlayer 就不知道随机开着 —— 通知栏 / 锁屏 / 蓝牙按它
+自带的 `ShuffleOrder` 走，app 内按键按我们的走。**两边各随机各的**，是最难复现
+也最难解释的一类「随机播放的 bug」。
+
+现在三条退出路径（熔断 / memo 命中 / 正常装完）统一走：
+
+```kotlin
+private fun syncShuffleMode() {
+    val c = controller ?: return
+    if (c.shuffleModeEnabled != shuffle) c.shuffleModeEnabled = shuffle
+}
+```
+
+只写一次、只在真的不一致时写。
+
+### 4. 缺口二：账本是按下标记的
+
+V1.4.5 为了让 generation 不动（否则守卫失效、必然重装），把 `resetShuffle()` 里的
+`shuffleState.invalidate()` 整个删了。这留下一个真缺陷：
+
+`ShuffleMemo` 按**下标**记账。队列增删或移动之后，同一个下标已经是另一首歌。旧
+答案虽然仍在 `0 until size` 范围内合法，`slot()` 的命中条件
+（`cached in 0 until size && cached != current`）照样通过 —— 但它指向一首这一次
+没被抽中的曲子。表现是「随机老是走那几条路」。
+
+```kotlin
+private fun resetShuffle() {
+    shuffleState.forgetDraws()
+    installShuffleOrder()
+}
+```
+
+`forgetDraws()` 三件事：扔答案、**留 `lastTrack`**、**不动 generation**。缺一不可
+—— 留 `lastTrack` 是因为「上一首避开刚听完的那首」要靠它；不动 generation 是因为
+一动就逼安装点重装 order，环又回来了（第 2 节）。
+
+`toggleShuffle()` 仍然走 `invalidate()`（连 `lastTrack` 一起清）—— 用户按下开关
+才是真的「重新随机」，包括忘掉刚才那首。
+
+### 5. 这一版没有做的事
+
+- **仍然没有真机验证**。本机模拟器在 WHPX 初始化后静默退出（第二节），改动的
+  运行时行为只到「JVM 单测 + dex/APK 静态核验」。若实机仍能复现，抓
+  `PlayerController` 标签的 logcat：正常路径除 `shuffle order deferred`（playlist
+  编辑还在路上，属预期）与 `shuffle order refused`（ExoPlayer 拒收，属异常）之外
+  不该再出现任何一行。
+- **没删时间窗熔断**。环已经不存在了，熔断理论上永远不会触发；留着是因为
+  `backfillQueue` 这类路径仍可能短时间内多次撞长度变化，删掉它等于假设「所有
+  长度变化都是用户动作」，而这个假设没有被验证过。真机上若再看到
+  `shuffle order install throttled`，说明还有别的环。
+- **没改随机语义**。`exclude` 仍只装当前曲（`previousIndex` 再加 `lastTrack`），
+  仍然不做近期去重窗口 / 洗牌袋 / 歌手分散 / 加权 / 种子持久化 —— 与 V1.4.2 的
+  决定一致。
+- **没动 `QueueMirror.dropInstalled()`**。整份 playlist 被 `setMediaItems` /
+  `clearMediaItems` 换掉时那里真的是「没有 order 了」，必须重装，与
+  `resetShuffle()` 的增量编辑是两回事。

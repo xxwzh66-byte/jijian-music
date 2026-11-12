@@ -720,17 +720,32 @@ class PlayerController(
     /**
      * V5.3.1: publish the random policy to ExoPlayer after the queue changed.
      *
-     * V1.4.5: 这里**不再** `shuffleState.invalidate()`。
+     * V1.4.5: 这里**不再** `shuffleState.invalidate()` —— 那会 bump
+     * generation，memo 守卫失效后必然多装一次 order、多造一条 masking
+     * timeline，冷启动时和 `backfillQueue` 叠起来就是死结。
      *
-     * 队列变长变短，账本里那些旧下标已经被 `ShuffleMemo.slot` 的
-     * `cached in 0 until size` 挡掉了，不需要把整本账作废。而作废会 bump
-     * generation，generation 一变 memo 守卫就失效，于是必然多装一次 order，
-     * 多一次 masking timeline —— 冷启动时这一步和 `backfillQueue` 叠在一起，
-     * 就是「第一次启动直接卡死」。用户主动开关随机（[toggleShuffle]）仍然
-     * 会作废，那才是真的「重新随机」。
+     * V1.4.6: 但也不能什么都不清。`ShuffleMemo` 是**按下标**记账的，队列增删
+     * 或移动之后同一个下标已经是另一首歌，旧答案虽然仍在 `0 until size` 里
+     * 合法、却指向一首这一次没被抽中的曲子，表现就是「随机老是走那几条路」。
+     * 所以调 [RandomShuffleState.forgetDraws]：扔答案、留 lastTrack、
+     * **不动 generation**。三者的组合才是要的语义 —— 账本立刻作废，安装点
+     * 一次都不重装。
+     *
+     * 用户主动开关随机（[toggleShuffle]）仍然走 `invalidate()`，那才是真的
+     * 「重新随机」，包括忘掉刚播过的那首。
      */
     private fun resetShuffle() {
-        forgetInstalledOrder()
+        shuffleState.forgetDraws()
+        // 不再 forgetInstalledOrder()：**长度没变就不需要重装**。
+        // 装进去的 order 是活视图（转发到共享的 RandomShuffleState），队列
+        // 只是换了顺序时它下一问就给出新答案；长度真的变了，
+        // [installShuffleOrder] 的 `installedShuffleLength == length` 判据
+        // 自己就会不成立、自己就会重装。手动把它置 -1 只会白白多造一条
+        // masking timeline。
+        //
+        // 整份 playlist 被换掉（setMediaItems / clearMediaItems）的那几条
+        // 路径仍然走 QueueMirror 的 `dropInstalled()`——那里是真的没有 order
+        // 了，必须重装。
         installShuffleOrder()
     }
 
@@ -769,7 +784,12 @@ class PlayerController(
             installWindowCount = 0
         }
         if (++installWindowCount > MAX_INSTALLS_PER_WINDOW) {
+            // V1.4.6: 熔断只是「这一轮别再 setShuffleOrder」，不是「整件事放弃」。
+            // 以前这里直接 return false，等于连 shuffleModeEnabled 都没交代：
+            // 万一装进去的还是 ExoPlayer 自带的 order，通知栏就会按它自己的
+            // RNG 走，app 按键按我们的走，两边分叉。模式必须无条件同步。
             Log.e(TAG, "shuffle order install throttled: $installWindowCount in ${INSTALL_WINDOW_MS}ms")
+            syncShuffleMode()
             return false
         }
         val exo = PlayerHolder.player ?: return false
@@ -781,28 +801,29 @@ class PlayerController(
             Log.w(TAG, "shuffle order deferred: playlist=$length queue=${queue.size}")
             return false
         }
-        // V6.1: 这是「切模式卡顿」的根因所在。
+        // V1.4.6: 守卫只比长度，**不比 generation**。
         //
+        // 背景（V6.1 的记录，保留因为它是这段代码为什么长成这样的由来）：
         // ExoPlayerImpl.setShuffleOrder 会 createMaskingTimeline() 造一个新的
         // PlaylistTimeline 实例，而 PlaylistTimeline 没有重写 equals ——
         // updatePlaybackInfo 里的 Timeline.equals 因此必然为 false，于是它
         // 派发 onTimelineChanged 回到本函数，本函数又装一次、又造一个新
-        // timeline……一次开关随机变成一串 rebuild，跨进程的 MediaController
-        // 再把每一轮放大成真正的主线程停顿。
+        // timeline……一次开关随机变成一串 rebuild。V6.1 用 generation 做 memo
+        // 守卫，把无限环截成「一次开关多付一轮」；V1.4.5 又加了一层时间窗熔断
+        // 去兜「多轮」。
         //
-        // 装进去的那份 order 背后是同一个 RandomShuffleState，只有它的
-        // generation 变了才需要重装；同一个 generation 重装一份一模一样的东西
-        // 语义上没有任何变化，只是白付一次 masking 的代价。
+        // 装进 ExoPlayer 的那个 RandomShuffleOrder 每一问都转发到同一个
+        // RandomShuffleState，账本也是共享的 —— 也就是说它是一张**活视图**，
+        // 不是快照。generation 变了、账本换了，它下一次被问就给出新答案，
+        // 完全不需要重装。
         //
-        // V6.1.2（审查澄清）: 这个 memo 不是「永不重装」的保证——第一次
-        // `orderFor` 画出新序时 generation 会 +1，于是下一个 timeline 事件仍会
-        // 重装一次。那一次是**有界**的（重装本身不画序，所以不会再次失效），
-        // 也正是它把原来的无限重建环截断成「一次开关最多多付一轮」。
-        // 想彻底消掉这一轮，得让 ExoPlayer 侧的 order 不再是快照（见
-        // [RandomShuffleState.copy] 与 cloneAndInsert），改动面比收益大。
-        val version = shuffleState.version
-        if (version == installedShuffleVersion && installedShuffleLength == length) {
-            controller?.shuffleModeEnabled = shuffle
+        // 两层闸门都是在给一个不该存在的循环装闸门：既然 order 是活视图，
+        // 重装在语义上就**恒等于零收益**，直接不比 generation，环从根上不存在。
+        //
+        // 所以现在唯一需要重装的信号是**长度**：队列长度变了，旧 order 捕获
+        // 的 size 就错了，必须换一份。长度不变时什么都不做。
+        if (installedShuffleLength == length) {
+            syncShuffleMode()
             return true
         }
         var installed = false
@@ -817,7 +838,6 @@ class PlayerController(
                 )
             }
                 .onSuccess {
-                    installedShuffleVersion = version
                     installedShuffleLength = length
                     installed = true
                 }
@@ -831,8 +851,21 @@ class PlayerController(
         // ExoPlayer only consults the installed ShuffleOrder while
         // shuffleModeEnabled is on, so a queue installed before the mode flip
         // used to be walked by its internal order instead of ours.
-        controller?.shuffleModeEnabled = shuffle
+        syncShuffleMode()
         return installed
+    }
+
+    /**
+     * V1.4.6: 把「随机开关」这一个事实同步给 ExoPlayer，且只同步这一件事。
+     *
+     * 单独拎出来是因为三条退出路径（熔断、memo 命中、正常装完）都必须走到
+     * 这里。以前熔断那条 return 得早，模式没被交代，ExoPlayer 就用自带的
+     * ShuffleOrder 走通知栏 —— app 与系统各随机各的，是「随机播放的 bug」
+     * 里最难复现也最难解释的一种。
+     */
+    private fun syncShuffleMode() {
+        val c = controller ?: return
+        if (c.shuffleModeEnabled != shuffle) c.shuffleModeEnabled = shuffle
     }
 
     /** Guards [installShuffleOrder] against re-entry from its own timeline event. */
@@ -843,14 +876,13 @@ class PlayerController(
     private var installWindowCount = 0
 
     /**
-     * V6.1: generation of the order currently installed in ExoPlayer, and the
-     * playlist length it was installed against.
+     * V6.1 / V1.4.6: the playlist length the installed order was built for.
      *
-     * Together they say "the installed order is still this one" - see the guard
-     * in [installShuffleOrder]. Reset to -1 whenever the playlist is rebuilt
-     * from scratch, because the new playlist has no installed order at all.
+     * 只有一个字段，因为只有一个问题需要回答：「装进去的那份 order 捕获的
+     * size 还对得上现在的队列吗」。order 本身是活的（转发到共享的
+     * RandomShuffleState），内容永远最新，所以不需要版本号。重置为 -1 表示
+     * 底下那份 playlist 已经整个换掉了。
      */
-    private var installedShuffleVersion = -1
     private var installedShuffleLength = -1
 
     /**
@@ -862,7 +894,6 @@ class PlayerController(
      * its length while every slot holds a different track).
      */
     private fun forgetInstalledOrder() {
-        installedShuffleVersion = -1
         installedShuffleLength = -1
     }
 
