@@ -105,8 +105,17 @@ plugins {
 // 留 lastTrack、不动 generation；②熔断那条 return 以前连 shuffleModeEnabled
 // 都不交代，app 与通知栏会各随机各的，现在三条退出路径统一走 syncShuffleMode()。
 // 包名与签名不变，可从 1.4.5 覆盖安装。
-ext.appVersionCode = 21
-ext.appVersionName = "1.4.6"
+//
+// V1.4.7：随机播放「上一首」的避开规则从 V1.0.1 起就是死的。它依据
+// ShuffleMemo.lastTrack，而 lastTrack 由 started() 写入 —— 写的是**刚开播的
+// 这一首**，跟 current 永远相等，`lastTrack != current` 这个前置条件恒假，于是
+// 「上一首」从没避开过任何东西：按「下一首」走到新的一首，再按「上一首」有
+// 概率原样退回上一首，看起来像按键没生效；连按两次能在两点之间来回弹。
+// 现在新增 ShuffleMemo.cameFrom，在 started() 覆盖 lastTrack **之前**转存旧
+// 值；重复上报同一首（onMediaItemTransition 与 playIndex 都会报）不覆盖它。
+// 包名与签名不变，可从 1.4.6 覆盖安装。
+ext.appVersionCode = 22
+ext.appVersionName = "1.4.7"
 
 android {
     namespace = "com.lxmusic.android"

@@ -126,18 +126,22 @@ class RandomShuffleStateStalenessTest {
     }
 
     @Test
-    fun forgetDrawsKeepsTheTrackThatJustPlayedSoPreviousStillAvoidsIt() {
+    fun forgetDrawsKeepsTheTrackWeCameFromSoPreviousStillAvoidsIt() {
         val state = state()
+        // 走两步，让账本知道「我们从 3 走到 5」。V1.4.7 之前这里依据的是
+        // lastTrack（刚开播的**这一首**），那跟 current 永远相等、避开规则
+        // 从未生效；现在依据是 cameFrom。
+        state.onTrackStarted(9, 3)
         state.onTrackStarted(9, 5)
         state.forgetDraws()
 
-        // lastTrack 还在，所以「上一首」必须继续避开刚听完的那首。
+        // 依据还在，所以「上一首」必须继续避开我们来的那一首。
         val order = RandomShuffleOrder(9, state, Random(7))
         for (index in 0 until 9) {
             val previous = order.getPreviousIndex(index)
             assertTrue(
-                "previous hit the track that just finished at index $index",
-                previous != 5,
+                "previous went back to the track we came from at index $index",
+                previous != 3,
             )
         }
     }

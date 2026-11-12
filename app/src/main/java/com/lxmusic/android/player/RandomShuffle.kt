@@ -148,18 +148,22 @@ class RandomShuffleState {
      * [current] 之前播什么：同样是一个均匀抽出来的下标。
      *
      * V1.0.1：这里不再是「周期里的前一位」。用户要的是上一次也随机，所以
-     * 上一首同样是抽的；唯一的修饰是**避开刚播完的那首**
-     * （[ShuffleMemo.lastTrack]），否则「上一首」会退回刚刚听完的曲子，看起来
-     * 像没生效。
+     * 上一首同样是抽的；唯一的修饰是**避开刚走过的那一步**
+     * （[ShuffleMemo.cameFrom]），否则「上一首」会把刚才按过的「下一首」原样
+     * 撤销，看起来像没生效。
+     *
+     * V1.4.7 修的是这里的依据曾经写错：避开的是 `lastTrack`（刚开播的**这一
+     * 首**，永远等于 `current`），不是「我们从哪一首走到这一首的」。于是
+     * `justPlayed != current` 恒为假，这条规则从 V1.0.1 起一次都没生效过。
      */
     @Synchronized
     fun previousIndex(size: Int, current: Int, random: Random = Random.Default): Int {
         if (size <= 1) return -1
         if (current !in 0 until size) return -1
         return memo.previousFor(size, current) {
-            val justPlayed = memo.lastTrack
-            val avoid = if (size > 2 && justPlayed in 0 until size && justPlayed != current) {
-                intArrayOf(current, justPlayed)
+            val cameFrom = memo.cameFrom
+            val avoid = if (size > 2 && cameFrom in 0 until size && cameFrom != current) {
+                intArrayOf(current, cameFrom)
             } else {
                 intArrayOf(current)
             }
@@ -272,8 +276,22 @@ internal class ShuffleMemo {
     private val next = HashMap<Int, Int>(8)
     private val previous = HashMap<Int, Int>(8)
 
-    /** 最近一次真正开始播的下标，-1 表示还不知道。 */
+    /**
+     * 最近一次真正开始播的下标，-1 表示还不知道。
+     *
+     * V1.4.7 起它**不再**是「上一首」的依据：`started()` 写入的就是刚开播的
+     * 这一首，拿它跟 `current` 比永远相等。保留它是为了 [clear] 的语义与
+     * 调试可见性。
+     */
     var lastTrack = -1
+        private set
+
+    /**
+     * 「我们从哪一首走到 [lastTrack] 的」——「上一首」要避开的那一个下标。
+     *
+     * -1 表示不知道（刚启动、队列刚换、或第一次上报）。
+     */
+    var cameFrom = -1
         private set
 
     @Synchronized
@@ -284,20 +302,36 @@ internal class ShuffleMemo {
     fun previousFor(size: Int, current: Int, draw: () -> Int): Int =
         slot(previous, size, current, draw)
 
-    /** 一首歌开始播：记住它，并让所有槽位失效。 */
+    /**
+     * 一首歌开始播：记住它，并让所有槽位失效。
+     *
+     * V1.4.7：旧 `lastTrack` 在覆盖**之前**转存进 [cameFrom] —— 那才是「上一
+     * 首」。重复上报同一个下标（`onMediaItemTransition` 与 `playIndex` 都会上
+     * 报）时**不覆盖** [cameFrom]：否则第二条上报会把「上一首」写成当前首，
+     * 避开规则又白写了。
+     */
     @Synchronized
     fun started(size: Int, current: Int) {
-        if (current in 0 until size) lastTrack = current
+        if (current !in 0 until size) {
+            next.clear()
+            previous.clear()
+            return
+        }
+        if (current != lastTrack && lastTrack in 0 until size) {
+            cameFrom = lastTrack
+        }
+        lastTrack = current
         next.clear()
         previous.clear()
     }
 
-    /** 队列变了或开关随机：整本作废。 */
+    /** 队列变了或开关随机：整本作废（含「上一首」的依据）。 */
     @Synchronized
     fun clear() {
         next.clear()
         previous.clear()
         lastTrack = -1
+        cameFrom = -1
     }
 
     /**

@@ -1,6 +1,6 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.4.6** (`versionCode = 21`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.4.7** (`versionCode = 22`)
 
 > **V1.4.5 起只编译、只发布 debug 版**（`com.lxmusic.android.debug`）。应用内的「下载并安装」装的就是同一个 debug 签名，能覆盖升级；正式包如果还留着旧版本，需要先卸载一次。
 
@@ -171,7 +171,7 @@ app/src/main/java/com/lxmusic/android/
 ./gradlew :app:testDebugUnitTest
 ```
 
-**422 项单元测试 / 41 个类 / 0 失败。**
+**426 项单元测试 / 42 个类 / 0 失败。**
 
 纯逻辑优先：抽签、队列、歌词解析、设置键往返、备份指纹、扫描复用、搜索索引、
 可访问性文案、平板右栏归属都是不需要 Android 的纯函数。`RandomShuffle*` 五个类
@@ -186,76 +186,84 @@ app/src/main/java/com/lxmusic/android/
 
 ---
 
-## V1.4.6 — 那张 order 一直是活的，所以一次都不该重装 (`versionCode = 21`)
+## V1.4.7 — 那条避开规则从 V1.0.1 起就是死的 (`versionCode = 22`)
 
-### 这次错的是一层理解，不是一行业务
+### 一个恒为假的条件
 
-`setShuffleOrder` 装进 ExoPlayer 的 `RandomShuffleOrder`，每一问都转发到同一个
-`RandomShuffleState`，而账本（`ShuffleMemo`）在 `copy()` 里也是**共享**的。
-也就是说：它是一张**活视图**。队列换序、账本作废、generation 前进，它下一次
-被问就给出新答案 —— 不需要谁来重装。
+「上一首」不是把「下一首」倒过来放 —— 用户要的是**也随机**。为了不让它随机
+到刚刚才听过的那一首（那就等于把刚才按的那一步撤销了），`previousIndex` 里有
+一条避开规则，注释从 V1.0.1 起就写着「避开刚播完的那首」。
 
-既然是活的，重装在语义上就**恒等于零收益**。而重装恰恰是那个环：
-
-```
-setShuffleOrder → createMaskingTimeline() → PlaylistTimeline 没有 equals
-      → Timeline.equals 恒 false → onTimelineChanged → 又回来装
-```
-
-V6.1 用 generation 做 memo 守卫，把无限环截成「一次开关多付一轮」；V1.4.5 又
-加了一层 1 秒 4 次的时间窗熔断去兜「多轮」。两层都是在给一个不该存在的循环
-装闸门 —— 而闸门本身有代价：熔断那条 `return false` 是在 `shuffleModeEnabled`
-被写下去**之前**返回的，于是这一轮里 ExoPlayer 根本不知道随机开着，通知栏就
-按它自带的 RNG 走，app 按键按我们的走。**两边各随机各的**，这是最难复现也最
-难解释的一类「随机播放的 bug」。
-
-现在守卫只比长度：
+它一次都没生效过。
 
 ```kotlin
-// V1.4.6: 只比长度，不比 generation。
-// order 是活视图，重装恒等于零收益；而重装就是那个环。
-if (installedShuffleLength == length) {
-    syncShuffleMode()
-    return true
+// 修之前
+val justPlayed = memo.lastTrack
+val avoid = if (size > 2 && justPlayed in 0 until size && justPlayed != current) {
+    intArrayOf(current, justPlayed)
+} else {
+    intArrayOf(current)
 }
 ```
 
-长度真的变了（队列增删），旧 order 捕获的 `size` 就错了，必须换一份 —— 这是
-唯一需要重装的信号。三条退出路径（熔断 / memo 命中 / 正常装完）统一走
-`syncShuffleMode()`，模式只要和当前不一致就写一次，不再有任何一条路悄悄跳过。
+`lastTrack` 由 `started(size, current)` 写入 —— 写进去的正是**刚开播的这一
+首**，也就是调用方马上要传进来的 `current`。第三个条件恒为假，整个分支永远走
+`else`，`avoid` 里永远只有 `current` 自己。避开规则是一段**不可达代码**。
 
-### 第二个缺口：账本是按下标记的
+用户看到的是两件事：
 
-V1.4.5 为了掐断上面那个环，把 `resetShuffle()` 里的 `shuffleState.invalidate()`
-删了 —— 队列变了也不作废账本。这留下一个真缺陷：`ShuffleMemo` 按**下标**记账，
-队列增删或移动之后同一个下标已经是另一首歌，旧答案虽然仍在 `0 until size`
-范围内合法，却指向一首这一次没被抽中的曲子。表现是「随机老是走那几条路」。
+- 播放 3 → 按「下一首」到 5 → 按「上一首」，有 1/7 的概率原样退回 3。看起来
+  像按键没生效，只好再按一次。
+- 连按两次「上一首」可以在同一对曲子之间来回弹。
 
-新增 `ShuffleMemo.forgetDraws()`：扔答案、**留 `lastTrack`**、**不动
-generation**。三件事缺一不可 —— 留 `lastTrack` 是因为「上一首避开刚听完的那
-首」要靠它；不动 generation 是因为一动就逼安装点重装 order，环又回来了。
+### `cameFrom` 与两个必须的细节
+
+`ShuffleMemo` 新增 `cameFrom`：**我们从哪一首走到现在这一首的**。
 
 ```kotlin
-private fun resetShuffle() {
-    shuffleState.forgetDraws()
-    installShuffleOrder()
+fun started(size: Int, current: Int) {
+    if (current != lastTrack && lastTrack in 0 until size) {
+        cameFrom = lastTrack
+    }
+    lastTrack = current
+    next.clear()
+    previous.clear()
 }
 ```
 
-`toggleShuffle()` 仍然走 `invalidate()`（连 `lastTrack` 一起清）—— 用户按下
-开关才是真的「重新随机」，包括忘掉刚才那首。
+1. **在覆盖 `lastTrack` 之前转存**。晚一行，旧值就没了。
+2. **重复上报同一首不覆盖 `cameFrom`**。换歌有两条路径都会上报 —— media3 的
+   `onMediaItemTransition`（通知栏、蓝牙、自动续播）和 `PlayerController` 的
+   `playIndex`（app 内按键）。第二条如果不判等就写，`cameFrom` 会变成当前首，
+   避开规则又白写了。
 
-### 422 → 422 项
+`previousIndex` 的避开依据从 `lastTrack` 换成 `cameFrom`，其余不变：仍然
+`size > 2` 才启用（两首队列没有第三个位置可去，排除两个等于无解），仍然均匀
+抽。`clear()`（换队列、开关随机）连 `cameFrom` 一起清。
 
-新增 5 个用例压在 `RandomShuffleStateStalenessTest` 上：`forgetDraws` 清账本、
-留 `lastTrack`（「上一首」仍避开刚播的）、不动 generation、`invalidate` 仍然
-既 bump 又清、作废后确实重抽而不是回放旧路径。
+### 一次「测试没在断言」的事故
 
-本机没有可用模拟器或真机（WHPX 初始化后 qemu 静默退出），所以**改动的运行时
-行为没有被端到端验证过**，验证只到「JVM 单测 + dex/APK 静态核验」。如果实机上
-仍能复现，请抓 logcat 里的 `PlayerController` 标签 —— 正常路径现在**不该**再
-出现 `shuffle order deferred` 或 `shuffle order refused` 之外的任何一行。
+新增 `RandomShuffleBacktrackTest` 的第一版，最关键那条写的是：
 
+```kotlin
+assertNotEquals("previous undid the next press", 50, undone)
+```
+
+50 个种子里「一次都没退回」的概率是 (6/7)^50 ≈ 0.0005，改成 `assertEquals(0, undone)`
+才是真的在断言。第一版无论改不改实现都会通过 —— 它跑绿了，但没有证明任何事
+情。严格化之后它立刻在 50 个种子里抓到了若干次退回，改完实现才转绿。
+
+同批把 V1.4.6 留下的 `forgetDrawsKeepsTheTrackThatJustPlayedSoPreviousStillAvoidsIt`
+改成 `forgetDrawsKeepsTheTrackWeCameFromSoPreviousStillAvoidsIt`：它断言的正是
+那个错误语义（`lastTrack` 作依据），继续留着会把 bug 锁死在测试里。
+
+### 422 → 426 项
+
+新增 4 个用例：不能撤销刚按的那一步、连按两次不能两点弹、避开的是「来的那一
+首」而不是「正在播的这首」、重复上报不擦掉「来的那一首」。
+
+本机仍然没有可用模拟器或真机（WHPX 初始化后 qemu 静默退出），**改动后的运行
+时行为没有被端到端验证过**，验证只到「JVM 单测 + aapt2/apksigner 静态核验」。
 
 ## 许可
 

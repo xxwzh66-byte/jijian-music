@@ -1,10 +1,10 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 21 / versionName "1.4.6"**
-> 报告版本：**V1.4.6**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 94 个 .kt；`app/src/test/java` 41 个 .kt / **422 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.4.6-vc21-debug.apk`（debug 签名，**23,260,156 B**；
-> SHA-256 `b7289fa8612ef6d8feb3c31157ac93cc92114dd709ee9b3edab347c7b6ff3140`）
+> 交接版本：**versionCode 22 / versionName "1.4.7"**
+> 报告版本：**V1.4.7**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 94 个 .kt；`app/src/test/java` 42 个 .kt / **426 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.4.7-vc22-debug.apk`（debug 签名，**23,137,110 B**；
+> SHA-256 `e19396a33d86dcdff347d67d1adc20abcbe6c82f920a717350f25e23f7d07f5e`）
 >
 > **V1.4.5 起只编译、只发布 debug 包。** 应用内的「下载并安装」必须与用户手里那份
 > 同一个签名，release 包（`jijian.keystore`）装上去必然冲突，所以发版流程不再跑
@@ -63,6 +63,12 @@
   （`ShuffleMemo.forgetDraws()`：扔答案、留 `lastTrack`、不动 generation）；
   熔断那条 return 以前连 `shuffleModeEnabled` 都不交代，app 与通知栏会各随机各的
   （`syncShuffleMode()` 统一三条退出路径）。422 项测试。
+- **V1.4.7「上一首」的避开规则从未生效**：它依据 `ShuffleMemo.lastTrack`，而
+  `started()` 写进去的就是刚开播的**这一首**，跟 `current` 永远相等 ——
+  `justPlayed != current` 恒假，避开分支是不可达代码（从 V1.0.1 起就是）。表现为
+  按「下一首」再按「上一首」有概率原样退回、连按两次能在两点之间弹。新增
+  `cameFrom`（覆盖前转存旧 `lastTrack`，重复上报不覆盖），`previousIndex` 改用它
+  作避开依据。见第二十五节
 - **V1.4.3 随机播放不再卡同一首 + 播放页切样式不卡**：单槽位备忘录取代成按
   `current` 分槽的 `ShuffleMemo`，且 `copy()` 改为**共享**同一本账——装进 ExoPlayer
   的那份克隆体终于也能被 `onTrackStarted` 弄脏。切样式三处卡顿全部是「在
@@ -88,7 +94,7 @@
 | 组件 | 位置 | 备注 |
 |---|---|---|
 | JDK 21 | `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` | **AGP 8.5 不兼容 JDK 25**（系统默认只有 25），必须显式指定这个 |
-| Android SDK | `D:\demo\02_开发工具链\android-sdk` | `platforms/android-34`+`36`、`build-tools/34.0.0`+`35`+`36`、`platform-tools`。`D:\demo\toolchains\android-sdk` 是同一处的符号链接 |
+| Android SDK | `D:\demo\toolchains\android-sdk`（junction → `D:\demo\02_kaifa\android-sdk`） | `platforms/android-34`+`36`、`build-tools/34.0.0`+`35`+`36`、`platform-tools`。**路径里没有「开发工具链」这个名字了**，旧文档写的 `02_开发工具链` 已不存在 |
 | Gradle | wrapper 自动下载 | `gradle/wrapper/gradle-wrapper.properties` 指向**华为云镜像**，官方 CDN 极慢 |
 
 **V1.1.6 起路径与临时目录是两个非显然的坑**，都已经在仓库里绕过：
@@ -115,12 +121,17 @@
 
 ```bash
 cd /x/lxmusic-android || exit 1
-export JAVA_HOME="/c/Program Files (x86)/Android/openjdk/jdk-21.0.8"
-export ANDROID_SDK_ROOT="D:/demo/02_开发工具链/android-sdk"
+# 不要覆盖 JAVA_HOME：系统已给 jdk17。覆盖成 jdk21 会报
+#   "Value ... given for org.gradle.java.home is invalid"
+export ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-D:\\demo\\toolchains\\android-sdk}"
 ./gradlew.bat "$@" --no-daemon --console=plain \
   "-Dorg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 -Djava.io.tmpdir=D:\\demo\\_tmp -Dkotlin.daemon.client.alive.path=D:\\demo\\_tmp\\kotlin-client.alive" \
   -Pkotlin.compiler.execution.strategy=in-process
 ```
+
+> **`_bx4.sh` 会丢**：它在仓库外的 `D:\demo` 下，已被清理过至少两次。丢了的症状是
+> `bash: /d/demo/_bx4.sh: No such file or directory`。照上面代码块重建即可，三分钟的事，
+> 不要试图换别的构建方式 —— 每一代 `_bxN.sh` 都踩过不同的坑（见下）。
 
 调用：`bash /d/demo/_bx4.sh :app:compileDebugKotlin` / `bash /d/demo/_bx4.sh :app:testDebugUnitTest`。
 
@@ -133,30 +144,24 @@ export ANDROID_SDK_ROOT="D:/demo/02_开发工具链/android-sdk"
 - `:app:assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`
 - `:app:versionedApk` → `build/apk/jijian-music-<版本>-vc<号>.apk`（**给用户的就是这个**，见第六节）
 - `:app:versionedDebugApk` → 同目录的 `-debug` 变体
-- `:app:testDebugUnitTest` → 289 项单元测试；统计用 `python -X utf8 _cnt.py`（另有 `_per_class.py`）解析
+- `:app:testDebugUnitTest` → 426 项单元测试；统计用 `python -X utf8 _cnt.py`（另有 `_per_class.py`）解析
   `app/build/test-results/testDebugUnitTest/*.xml` 的 `tests=` / `failures=` / `errors=` 属性
   （不要用 PowerShell 的 `[xml]`，会把中文测试名弄乱）
 
 ### 这台机器上没有的东西（重要）
 
-- **模拟器是本会话新装的**：`D:\demo\android-sdk\emulator` + AVD `neon33f`
-  （`system-images;android-33;default;x86_64`，AVD 目录 `D:\demo\android-avd`）。
-  无头启动（**必须用 `Start-Process` 游离启动，`run_in_background` 包装会被杀**）：
-
-  ```powershell
-  $env:ANDROID_SDK_ROOT="D:\demo\android-sdk"; $env:ANDROID_HOME="D:\demo\android-sdk"; $env:ANDROID_AVD_HOME="D:\demo\android-avd"
-  Start-Process -FilePath "D:\demo\android-sdk\emulator\emulator.exe" `
-    -ArgumentList "-avd","neon33f","-no-window","-no-audio","-no-boot-anim","-gpu","swiftshader_indirect","-no-snapshot" `
-    -RedirectStandardOutput "D:\demo\_emu.out" -RedirectStandardError "D:\demo\_emu.err" -WindowStyle Hidden
-  ```
-
-  已知问题：**无头模拟器跑一段时间会自行退出**（`_emu.err` 无报错，`_emu.out` 末行是
-  `Boot completed`），每次调试前先 `adb devices` 确认。**不要给模拟器 `setprop log.tag.ExoPlayerImpl`**，
-  会把无头实例搞掉线。
-- 测试音乐已推到 `/sdcard/Music/NeonBloom/`（6 首 MP3，只有 `01_neon_drift.lrc`）。
+- **没有模拟器，也没有真机**。合并前的记录里写着 AVD `neon33f` 可用，那是过时的：
+  这一代会话连续试过三次（旧 AVD、新建 AVD `jjm33`、`-verbose` 直跑 qemu-headless），
+  **全部在打印 `WHPX on Windows 10.0.26200 detected.` / `Windows Hypervisor Platform
+  accelerator is operational` 之后进程静默消失**（exit code 21），`adb devices` 始终为空。
+  `-gpu swiftshader_indirect` / `-gpu off` / `-accel off` / `-wipe-data` / 换端口 /
+  `Start-Process` 游离 / 删 `*.lock` 全试过，全部一样。
+  **结论：实机验证一律退化为「JVM 单测 + aapt2 / apksigner 静态核验」，不要再花时间
+  试模拟器。** 需要真机行为时，请让用户 `adb install -r -d` 手动验证并抓 logcat。
 - 项目**已是 git 仓库**，远端 `https://github.com/xxwzh66-byte/jijian-music`（公开）。
   V1.0 起的历史可用 `git log` / `git show` 追溯；`D:\demo\backups\` 里的三个
   v5.3–v5.5 源码 zip 是 V1.0 之前唯一的留档。
+- **`git push` 不通**（见第七节）：发版靠 GitHub API 直接写 Git Data，不走 `git push`。
 
 ---
 
@@ -376,7 +381,15 @@ QQ（及多数 IM 文件传输）**按「文件名 + 大小」去重**。此前�
 
 ### GitHub Actions（V1.0.3 起）
 
-`.github/workflows/ci.yml`：push 到 main 跑全量单测（含 `_cnt.py` 汇总步）；打 `v*` tag 会构建 versionedApk 并把 APK 挂到对应 GitHub Release。发版 = `git tag v1.0.x && git push origin v1.0.x`，正文可后补；App 内的检查更新读的就是这份 Release 的 tag/标题/正文。
+`.github/workflows/ci.yml`：push 到 main 跑全量单测（含 `_cnt.py` 汇总步）。
+
+> **这份工作流在当前网络下跑不到**：这个工作流要求的路径是 `git push`，而 `git push`
+> 在本机不通（第七节）。另外 `build.yml` 里**任何 `secrets.*` 表达式都会让工作流在解析期
+> `startup_failure`**（p3–p7 二分确证：workflow 级 env / job 级 env / 内联 `run:` /
+> 运行时 `$GITHUB_ENV` 全试过），所以 release job 已整个删掉。
+>
+> **实际发版流程是本地构建 + GitHub API 上传**（第七节）。App 内的检查更新读的是
+> Release 的 tag / 标题 / 正文，与用哪条路上传无关。
 
 ### 签名
 
@@ -388,6 +401,54 @@ apksigner：v2 scheme = true、v1 = false、v3 = false，单 signer。
 ---
 
 ## 七、排障手册
+
+### 发版：`git push` 不通，只有 GitHub API 这一条路
+
+`github.com:443` 在这台机器上**连不上**。已试过并全部失败（不要重复试）：
+
+- `140.82.116.4` / `140.82.116.3` / `140.82.114.4` 三个 IP —— TCP 直接超时（`curl` 返回 000）；
+- `20.205.243.166`（DNS 当前解析到的那个）—— `curl https://github.com/` 能返回 200，但
+  `git-receive-pack` 端点走到 401 后 `schannel: recv returned error 56` / `Connection was reset`；
+- `-c http.curloptResolve=github.com:443:<ip>`、`-c http.version=HTTP/1.1`、
+  `-c http.sslBackend=openssl`、`-c http.postBuffer=...`、URL 内嵌 token、
+  `http.extraheader="Authorization: Basic ..."`、各种 `credential.helper` 写法、重试 3 次。
+
+系统里也没有可用代理（`ProxyEnable=0`，7890 / 10809 端口都不通）。
+
+**唯一可用路径是 GitHub API 的 Git Data 接口**，`api.github.com` 与
+`uploads.github.com` 都不受影响：
+
+1. `GET /repos/<repo>/git/ref/heads/main` → 远端 sha；
+2. `GET /repos/<repo>/git/commits/<sha>` → `base_tree`；
+3. `GET /repos/<repo>/git/trees/<base_tree>?recursive=1` → `path → sha` 表，
+   与本地 `git ls-tree -r HEAD` 的 blob sha 比对，得出 changed / deleted；
+4. 每个 changed 文件 `git cat-file blob <sha>` → `POST /git/blobs`
+   （`{"content": <base64>, "encoding": "base64"}`）；
+5. `POST /git/trees`（`{"base_tree": ..., "tree": [{"path","mode","type","sha"}, ...]}`，
+   删除项写 `"sha": null`）；
+6. `POST /git/commits`（message 取 `git log -1 --pretty=%B`，`parents: [远端 sha]`）；
+7. `PATCH /git/refs/heads/main`（`{"sha": <新 commit>}`）。
+
+发 Release 走同一条路：`POST /git/refs`（建 tag）→ `POST /releases` →
+`POST https://uploads.github.com/repos/<repo>/releases/<id>/assets?name=<文件名>`
+带 `Content-Type: application/vnd.android.package-archive`。同名 asset 要先
+`DELETE /releases/assets/<id>`。
+
+token 取法（**必须传 `"get"` 且用 `encoding="utf-8"`**，否则读出来是乱码）：
+
+```python
+subprocess.run(
+    [r"C:\Program Files\Git\mingw64\bin\git-credential-manager.exe", "get"],
+    input="protocol=https\nhost=github.com\n\n",
+    capture_output=True, text=True, encoding="utf-8",
+)
+# 取以 password= 开头那一行的后半段（40 字符）
+```
+
+遇 `EOF occurred in violation of protocol` 或 `WinError 10061` 直接重试，是瞬时故障。
+
+> 这两个脚本（`_api_commit3.py` 与 `_rel*.py`）放在仓库外的 `D:\demo` 下，**会被清理掉**，
+> 上面七步就是重建依据。
 
 ### 用户报「闪退」/「卡死」
 
@@ -494,7 +555,7 @@ python -X utf8 _x.py
 |---|---|---|
 | 启动静默检查更新 | `MainViewModel.maybeCheckForUpdatesOnStartup()`：每 24h 一次（`UPDATE_CHECK_INTERVAL_MS` + 新 KEY `last_update_check_at` 节流）。静默失败或「已是最新」**退回 IDLE**——设置页副标题不显示用户没主动发起过的检查结果；手动检查不节流 | 行为锁在 LxApp 的 LaunchedEffect，节流值持久化 |
 | 首页新版本公告条 | `LxApp.UpdateBanner`：仅 `AVAILABLE` 时出现在标签栏上方，玻璃语言（neonGlass + 品牌竖条 + NeonDot 呼吸点），点按复用设置页的 `UpdateDialog`（已从 private 改 internal） | 复用对话框，不新建第二份公告 UI |
-| GitHub Actions | `.github/workflows/ci.yml`：push → 全量单测；`v*` tag → 构建 versionedApk + 挂到 Release | 发版从手工 API 链变成 `git tag && git push` |
+| GitHub Actions | `.github/workflows/ci.yml`：push → 全量单测 | 本机 `git push` 不通、`secrets.*` 会让工作流 `startup_failure`，release job 已删；发版实际走 GitHub API（第七节） |
 | 死代码清理 | 删 `allowShowUpdateAlert`（`LxModels.kt`/`AppDatabase.kt`，零读者）；三份被 V1.0.1 推翻的设计文档移入 `docs/archive/`；`_cnt.py`/`_per_class.py`/`_probe_stall.ps1` 去 BOM、去硬编码绝对路径；`ShuffleStallProbe` 注释不再指向已删的 `_dex/` | `recordHistory` **有意保留**：MainViewModel 读它 gate `repo.markPlayed`（最近播放），不是死开关 |
 
 ### V1.0.1 变更（两个方向都改成抽签 + 两个 seam）
@@ -588,6 +649,8 @@ V1.0 的修法只补了一半。
 > `RandomShuffleCloneTest` 7 → 9：删 `aSnapshotDoesNotLeakBackIntoTheParent`，新增
 > `aCloneHearsTheTrackStartedToo` 与 `invalidateBlindsTheCloneAsWell`）。
 > **V1.4.6 → 422 项 / 41 类**（`RandomShuffleStateStalenessTest` +5，压在 `forgetDraws` 上）
+> **V1.4.7 → 426 项 / 42 类**（新增 `RandomShuffleBacktrackTest` 4 例；`RandomShuffleStateStalenessTest`
+> 里那条按旧语义写的用例改名并改写为 `forgetDrawsKeepsTheTrackWeCameFromSoPreviousStillAvoidsIt`）
 > **V1.4.5 → 417 项 / 41 类**（删 `SettingsRoundTripTest.autoCheckUpdatesDefaultsOnAndSurvivesAWrite`
 > 一项；`QueueMirrorTest.everyEditResetsBothModes` 改名
 > `everyEditResetsRepeatModeButLeavesShuffleToItsOwner`；`UpdateCheckerTest` 两个选包
@@ -681,13 +744,16 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 
 ## 十二、接手检查清单
 
-- [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\02_开发工具链\android-sdk` 存在
+- [ ] 确认 `JAVA_HOME` 指向 `D:\demo\toolchains\toolchain\jdk17\jdk-17.0.20.1+1`
+      （**不要**改成 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8`：AGP 会报
+      `Value ... given for org.gradle.java.home is invalid`），`android-sdk` 存在
 - [ ] 确认 `subst X: "D:\demo\01_项目代码"` 已生效（否则 Kotlin 编译守护进程会崩，见第二节）
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 422 测试 0 失败
+- [ ] 确认 `D:\demo\_bx4.sh` 存在；不在就照第二节的代码块重建（它会被清理掉）
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 426 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.4.6-vc21-debug.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.4.7-vc22-debug.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---
@@ -700,10 +766,10 @@ bash /d/demo/_bx4.sh assembleDebug versionedDebugApk testDebugUnitTest
 # 发版只发 debug：从 V1.4.5 起不跑 assembleRelease / versionedApk
 
 # 看 APK 版本（别只看字节数：1.1.3/1.1.4/1.1.5 的 release 包都恰好是 16,098,025 B）
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.4.6-vc21-debug.apk | grep versionCode
+"/d/demo/toolchains/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.4.7-vc22-debug.apk | grep versionCode
 
 # 验签
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.4.6-vc21-debug.apk
+"/d/demo/toolchains/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.4.7-vc22-debug.apk
 
 # 重新生成搜索 bundle
 cd D:\demo\lx-builder; node build.mjs
@@ -1698,3 +1764,99 @@ private fun resetShuffle() {
 - **没动 `QueueMirror.dropInstalled()`**。整份 playlist 被 `setMediaItems` /
   `clearMediaItems` 换掉时那里真的是「没有 order 了」，必须重装，与
   `resetShuffle()` 的增量编辑是两回事。
+
+
+## 二十五、V1.4.7 设计与架构记录
+
+### 1. 缺陷：一段从 V1.0.1 起就没跑过的分支
+
+`RandomShuffleState.previousIndex` 里有一条避开规则，注释写着「避开刚播完的那
+首」，否则「上一首」会退回刚刚听完的曲子、看起来像没生效：
+
+```kotlin
+val justPlayed = memo.lastTrack
+val avoid = if (size > 2 && justPlayed in 0 until size && justPlayed != current) {
+    intArrayOf(current, justPlayed)
+} else {
+    intArrayOf(current)
+}
+```
+
+`lastTrack` 由 `ShuffleMemo.started(size, current)` 写入，写进去的就是**刚开播
+的这一首**。而 `previousIndex(size, current)` 的 `current` 也正是那一首。第三个
+条件 `justPlayed != current` 因此恒为假，`avoid` 里永远只有 `current`。避开规则
+是**不可达代码**，从 V1.0.1 写下注释那天起就没生效过。
+
+用户可见后果两条：
+
+- 播放 3 → 按「下一首」到 5 → 按「上一首」：8 个候选里除 5 之外均匀抽，其中
+  包含 3，于是有 1/7 概率原样退回。用户会以为按键没生效，再按一次。
+- 连按两次「上一首」可以在同一对曲子之间来回弹。
+
+### 2. 修法：`cameFrom`，以及两个不能省的条件
+
+```kotlin
+var cameFrom = -1
+    private set
+
+fun started(size: Int, current: Int) {
+    if (current !in 0 until size) { next.clear(); previous.clear(); return }
+    if (current != lastTrack && lastTrack in 0 until size) {
+        cameFrom = lastTrack
+    }
+    lastTrack = current
+    next.clear()
+    previous.clear()
+}
+```
+
+- **必须在覆盖 `lastTrack` 之前转存**。晚一行旧值就没了，`cameFrom` 永远是 -1。
+- **必须判 `current != lastTrack` 才写 `cameFrom`**。同一首歌会被上报两次：
+  media3 的 `onMediaItemTransition`（通知栏/蓝牙/自动续播）与
+  `PlayerController.playIndex`（app 内按键、在线曲目单曲播放）。第二条上报若覆
+  写，`cameFrom` 会变成当前首，避开规则又白写 —— 这正是原缺陷的成因，只是把
+  它从「恒假」换成了「大部分时候为假」。
+- `clear()`（换队列、开关随机）连 `cameFrom` 一起清；`forgetDraws()`（队列增量
+  编辑）**只清两本账、保留 `cameFrom`** —— 理由与保留 `lastTrack` 相同：编辑队
+  列不该让我们忘掉刚才从哪来的。
+
+`previousIndex` 的其余语义没动：`size > 2` 才启用（两首队列排除两个等于无解）、
+均匀抽、按 `current` 分槽缓存。
+
+### 3. 一次「测试绿了但什么都没断言」的事故
+
+`RandomShuffleBacktrackTest` 第一版最关键那条断言写的是：
+
+```kotlin
+assertNotEquals("previous undid the next press", 50, undone)   // ← 错的
+```
+
+50 个种子里从没退回的概率是 (6/7)^50 ≈ 0.0005，所以 `undone == 50` 几乎不可能
+出现 —— 这条断言**无论实现是 bug 还是修好的都会通过**。它跑绿了，但它没有证明
+任何事。改成 `assertEquals(0, undone)` 之后立刻在 50 个种子里抓到若干次退回，
+改完实现才转绿。
+
+教训写在这里而不是别处：**「跑绿」不等于「断言了」**。概率型断言必须把「完全
+不发生」写成严格相等，否则它只是在描述一个几乎为真的巧合。
+
+同批把 V1.4.6 留下的 `forgetDrawsKeepsTheTrackThatJustPlayedSoPreviousStillAvoidsIt`
+改名改写为 `forgetDrawsKeepsTheTrackWeCameFromSoPreviousStillAvoidsIt`。它断言的
+是旧语义（`lastTrack` 作依据），留着会把刚才那个 bug 焊死在测试里 —— 这是本项
+目第二次遇到「测试锁住缺陷」（第一次是 V1.4.3 的
+`aCopyIsASnapshotNotASharedView`，断言的正是后来被证伪的快照语义）。
+
+### 4. 这一版没有做的事
+
+- **仍然没有真机验证**。本机模拟器在 WHPX 初始化后静默退出（第二节），改动只到
+  「JVM 单测 + aapt2/apksigner 静态核验」。
+- **没改 `getFirstIndex()/getLastIndex()`**。它们返回固定端点 `0` / `size - 1`，
+  而 `UnshuffledShuffleOrder` 的契约是「没有邻居时返回 -1、端点按序」——
+  理论上 `repeatMode = ALL` 回绕时通知栏会跳到队列第一首。但随机模式下每步都抽
+  得到下一首，`getNextIndex` 永不返回 -1，那条回绕路径够不到，这一版不动。
+- **没动 `pendingSeekIndex` / `resolvePendingSeek()`**。`resolvePendingSeek` 在
+  `count != queue.size` 时静默丢弃 target（只 `return`、不重试），而整仓测试对它
+  零覆盖。它需要能观察到「MediaController 异步补投 playlist 编辑」的时钟才能测，
+  单测造不出那个时序，硬写就是假测试。记为待办。
+- **没删时间窗熔断**（1 秒 4 次）。理由同 V1.4.6：`backfillQueue` 这类路径仍可能
+  短时间内多次撞长度变化，删掉等于假设「所有长度变化都是用户动作」，这个假设没
+  被验证过。真机上若再看到 `shuffle order install throttled`，说明还有别的环。
