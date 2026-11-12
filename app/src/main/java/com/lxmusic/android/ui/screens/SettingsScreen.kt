@@ -282,13 +282,6 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
             item { SectionHeader("更新", expanded = isExpanded("更新")) { toggle("更新") } }
             if (isExpanded("更新")) {
                 item {
-                    SwitchRow(
-                        title = "启动时自动检查更新",
-                        checked = s.autoCheckUpdates,
-                        onCheckedChange = viewModel::setAutoCheckUpdates,
-                    )
-                }
-                item {
                     InfoRow(
                         title = "立即检查",
                         subtitle = updateSubtitle(up, viewModel.versionName),
@@ -307,6 +300,20 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
                                 android.content.ClipData.newPlainText("version", viewModel.versionName),
                             )
                             toast(context, "已复制版本号：" + viewModel.versionName)
+                        },
+                    )
+                }
+                item {
+                    InfoRow(
+                        title = "项目地址",
+                        subtitle = PROJECT_URL,
+                        onClick = {
+                            val intent = android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                Uri.parse(PROJECT_URL),
+                            )
+                            runCatching { context.startActivity(intent) }
+                                .onFailure { toast(context, "没有可以打开网页的应用") }
                         },
                     )
                 }
@@ -351,6 +358,9 @@ fun SettingsScreen(viewModel: MainViewModel, onBack: () -> Unit) {
         )
     }
 }
+
+/** V1.4.5: 项目主页，设置页「项目地址」一行直接跳过去。 */
+private const val PROJECT_URL = "https://github.com/xxwzh66-byte/jijian-music"
 
 /** V1.0.2: 「检查更新」一行的副标题，随状态换文案。 */
 private fun updateSubtitle(state: UpdateCheckState, current: String): String? = when (state.status) {

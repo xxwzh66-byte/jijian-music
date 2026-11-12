@@ -277,8 +277,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------- update checking ----------------
 
     fun checkForUpdates() = updateStore.check()
-    fun maybeCheckForUpdatesOnStartup() = updateStore.maybeCheckOnStartup()
-    fun setAutoCheckUpdates(on: Boolean) = updateStore.setAutoCheckUpdates(on)
+    fun checkForUpdatesOnStartup() = updateStore.checkOnStartup()
 
     /** Pull the discovered release APK into the cache, verified. */
     fun downloadUpdate() = updateStore.downloadUpdate()

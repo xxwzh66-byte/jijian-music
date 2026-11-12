@@ -46,23 +46,17 @@ class UpdateStore(
     fun check() = run(silent = false)
 
     /**
-     * Startup check, throttled to once per [UPDATE_CHECK_INTERVAL_MS].
+     * Every launch checks, and only a newer version interrupts the user.
      *
-     * Shares the result flow with [check] but only interrupts the user when a
-     * newer version really exists: a silent failure or "already latest" falls
-     * back to IDLE, because this app may be offline for its whole life and the
-     * settings subtitle should not report a check the user never asked for.
+     * V1.4.5 删掉了「启动时自动检查更新」这个开关，也删掉了 24 小时节流：开关和节流
+     * 加起来的效果是「用户以为在查，其实没查」。现在每次进应用都查一次，但仍然静默 ——
+     * 失败与「已是最新」都退回 IDLE，不往设置页塞一条用户没要的状态。
      */
-    fun maybeCheckOnStartup() {
+    fun checkOnStartup() {
         if (_update.value.status != UpdateStatus.IDLE) return
-        if (!settingsStore.state.value.autoCheckUpdates) return
-        val now = System.currentTimeMillis()
-        if (now - settingsStore.state.value.lastUpdateCheckAt < UPDATE_CHECK_INTERVAL_MS) return
-        settingsStore.setLastUpdateCheckAt(now)
+        settingsStore.setLastUpdateCheckAt(System.currentTimeMillis())
         run(silent = true)
     }
-
-    fun setAutoCheckUpdates(on: Boolean) = settingsStore.setAutoCheckUpdates(on)
 
     private fun run(silent: Boolean) {
         if (_update.value.status == UpdateStatus.CHECKING) return
@@ -230,8 +224,4 @@ class UpdateStore(
         _install.value = UpdateInstallState(InstallStatus.FAILED, message = message, seq = installSeq)
     }
 
-    private companion object {
-        /** Startup silent-check throttle (24h). */
-        const val UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000L
-    }
 }

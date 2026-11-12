@@ -98,7 +98,6 @@ internal class QueueMirror(
     /** Tells the app which slot is current now. */
     private val selectSlot: (Int) -> Unit,
     private val repeatFlag: () -> Int,
-    private val shuffleFlag: () -> Boolean,
     private val isPlaying: () -> Boolean,
     /**
      * The queue changed: drop the memoised draws and reinstall the order. Same
@@ -125,9 +124,16 @@ internal class QueueMirror(
     }
 
     /** Steps 3-5: modes back in place, then a fresh order. */
+    /**
+     * V1.4.5: 只回写 repeatMode，不再回写 shuffleModeEnabled。
+     *
+     * 回写会走 ExoPlayerImpl.updatePlaybackInfo -> onTimelineChanged -> 再装一次
+     * 随机序；而 [onQueueMutated] 本身已经会触发一次安装。启动时这两条路同时
+     * 开着，一次冷启动就变成一串同步 rebuild。shuffle 的开关状态由
+     * PlayerController.installShuffleOrder 末尾统一写入，这里不掺和。
+     */
     private fun resync(t: MirrorTarget) {
         t.repeatMode = repeatFlag()
-        t.shuffleModeEnabled = shuffleFlag()
         onQueueMutated()
     }
 

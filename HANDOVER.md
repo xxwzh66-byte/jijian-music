@@ -1,10 +1,14 @@
 # 极简music (JiJianMusic) — 项目交接报告
 
-> 交接版本：**versionCode 19 / versionName "1.4.3"**
-> 报告版本：**V1.4.3**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
-> 代码规模：`app/src/main/java` 94 个 .kt；`app/src/test/java` 41 个 .kt / **418 项测试 0 失败**
-> 产物：`build/apk/jijian-music-1.4.3-vc19.apk`（release 签名，**3,559,492 B**；
-> SHA-256 `c44fe8a4fc01ef2fb8a458f26d4ac2115b4a1f77fca4198ae6bdaf56ed6d928f`）
+> 交接版本：**versionCode 20 / versionName "1.4.5"**
+> 报告版本：**V1.4.5**（按代码实况更新；V1.0 之前的逐版本历史已从本报告移除）
+> 代码规模：`app/src/main/java` 94 个 .kt；`app/src/test/java` 41 个 .kt / **417 项测试 0 失败**
+> 产物：`build/apk/jijian-music-1.4.5-vc20-debug.apk`（debug 签名，**23,137,110 B**；
+> SHA-256 `d9d704c9c2858fc271b57d7a9b19b9af2873840788e0cb3dee3e7e833fa2185f`）
+>
+> **V1.4.5 起只编译、只发布 debug 包。** 应用内的「下载并安装」必须与用户手里那份
+> 同一个签名，release 包（`jijian.keystore`）装上去必然冲突，所以发版流程不再跑
+> `versionedApk`。
 
 ---
 
@@ -44,6 +48,12 @@
 - **V1.4.2 随机播放去崩溃**：`pickOther` 把「候选数组预分配 + 数量计算」换成一个
   `banned()` 判定——越界下标不算禁用、重复下标无害。同时把「不做近期去重窗口」写成
   显式决定（随机播放允许同一首歌在几步之内再次出现）。见第二十一节
+- **V1.4.5 只发 debug + 启动就查更新 + 两个真 bug**：`UpdateChecker` 反过来优先挑
+  `-debug.apk`，发版不再跑 `assembleRelease`（应用内安装必须与手上那份同签名）；
+  「启动时自动检查更新」开关与 24h 节流一起删掉，每次启动都查一次；随机播放的
+  冷启动卡死来自 `QueueMirror.resync` 回写 `shuffleModeEnabled` 与 `resetShuffle`
+  的 `invalidate()` 叠成环，一并加装 order 熔断（1 秒 4 次）；播放页换样式从
+  `Crossfade`（两套舞台同时存在）改成先淡出再换、再淡入。见第二十三节
 - **V1.4.3 随机播放不再卡同一首 + 播放页切样式不卡**：单槽位备忘录取代成按
   `current` 分槽的 `ShuffleMemo`，且 `copy()` 改为**共享**同一本账——装进 ExoPlayer
   的那份克隆体终于也能被 `onTrackStarted` 弄脏。切样式三处卡顿全部是「在
@@ -548,7 +558,7 @@ V1.0 的修法只补了一半。
 
 ## 十、测试
 
-**418 项 / 41 个测试类 / 0 失败**（V1.4.3 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
+**417 项 / 41 个测试类 / 0 失败**（V1.4.5 实测）。全部是 JVM 单元测试（`app/src/test/java/`），
 **不需要设备**。
 
 > **V1.0 → 217 项 / 25 类；V1.0.1 → 222 项 / 25 类；V1.0.2 → 235 项 / 26 类；V1.0.3 → 235 项 / 26 类；V1.1.1/1.1.2 → 235 项 / 26 类；V1.1.3 → 230 项 / 26 类；V1.1.4 → 229 项 / 26 类（删访问令牌 2 项、加自动检查 1 项）**（`PlayHistoryTest` 9 项随
@@ -568,6 +578,10 @@ V1.0 的修法只补了一半。
 > 改写为 `aCopySharesTheMemoSoBothSidesGoStaleTogether`，新增 `everyCurrentIndexKeepsItsOwnAnswer`；
 > `RandomShuffleCloneTest` 7 → 9：删 `aSnapshotDoesNotLeakBackIntoTheParent`，新增
 > `aCloneHearsTheTrackStartedToo` 与 `invalidateBlindsTheCloneAsWell`）。
+> **V1.4.5 → 417 项 / 41 类**（删 `SettingsRoundTripTest.autoCheckUpdatesDefaultsOnAndSurvivesAWrite`
+> 一项；`QueueMirrorTest.everyEditResetsBothModes` 改名
+> `everyEditResetsRepeatModeButLeavesShuffleToItsOwner`；`UpdateCheckerTest` 两个选包
+> 用例按「debug 优先」重写）。
 > V1.0 之前的基线（144/17 → 214/25）见 `git log`。
 
 | 测试类 | 项数 | 覆盖 |
@@ -625,7 +639,7 @@ V1.0 的修法只补了一半。
 `_probe_stall.ps1` 是「位置冻住」的长播探针，需要模拟器在线）：
 
 ```powershell
-& python _cnt.py     # files=41 tests=418 failures=0 errors=0
+& python _cnt.py     # files=41 tests=417 failures=0 errors=0
 ```
 
 V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路径。
@@ -659,11 +673,11 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 
 - [ ] 确认 `C:\Program Files (x86)\Android\openjdk\jdk-21.0.8` 与 `D:\demo\02_开发工具链\android-sdk` 存在
 - [ ] 确认 `subst X: "D:\demo\01_项目代码"` 已生效（否则 Kotlin 编译守护进程会崩，见第二节）
-- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 418 测试 0 失败
+- [ ] 跑一次标准构建命令，确认 `BUILD SUCCESSFUL` + 417 测试 0 失败
 - [ ] 读 `player/RandomShuffle.kt` 的 KDoc + `RandomShuffle*` 五个测试类 + `ShuffleStallProbe` + `QueueMirrorTest` + `StallWatchdogTest`
 - [ ] 读 `ui/theme/OledTokens.kt` 与 `ui/neon/NeonTokens.kt`（改 UI 前必读）
 - [ ] 读本报告第九节，决定先还哪笔技术债
-- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.4.3-vc19.apk`
+- [ ] 若要真机调试：`adb install -r -d build/apk/jijian-music-1.4.5-vc20-debug.apk`
       （`-d` 必需：`versionCode` 相对 6.x 时代的 26 是降级，系统默认拒绝）
 
 ---
@@ -672,13 +686,14 @@ V1.1.6 起 `_cnt.py` / `_per_class.py` 在仓库根，无 BOM、无硬编码路�
 
 ```bash
 # 构建 + 出包 + 测试（脚本在仓库外，见第二节）
-bash /d/demo/_bx4.sh assembleRelease versionedApk versionedDebugApk testDebugUnitTest
+bash /d/demo/_bx4.sh assembleDebug versionedDebugApk testDebugUnitTest
+# 发版只发 debug：从 V1.4.5 起不跑 assembleRelease / versionedApk
 
 # 看 APK 版本（别只看字节数：1.1.3/1.1.4/1.1.5 的 release 包都恰好是 16,098,025 B）
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.4.3-vc19.apk | grep versionCode
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/aapt2.exe" dump badging build/apk/jijian-music-1.4.5-vc20-debug.apk | grep versionCode
 
 # 验签
-"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.4.3-vc19.apk
+"/d/demo/02_开发工具链/android-sdk/build-tools/34.0.0/apksigner.bat" verify --print-certs build/apk/jijian-music-1.4.5-vc20-debug.apk
 
 # 重新生成搜索 bundle
 cd D:\demo\lx-builder; node build.mjs
@@ -1445,3 +1460,110 @@ but 'kotlin.Float' was expected   (RotatingArtwork.kt:195)
   频率低，不是卡顿来源。
 - **没做真机验证**：本机模拟器在 WHPX 初始化后静默退出（见第二节），这一版的
   两个修复都是靠单元测试 + 代码路径推导确认的。
+
+---
+
+## 二十三、V1.4.5 设计与架构记录
+
+这一版是四条产品决定 + 两个真 bug，其中一条产品决定顺手改掉了发布形态。
+
+### 1. 只发 debug 包（发布形态变更）
+
+「应用内下载并安装」在 V1.1.7 上线时就有个隐含前提：下载的包必须和用户手里那份
+同一个签名。当时的选择是**下载 release 包**（`parseRelease` 优先挑不带 `debug` 的
+资产）。V1.4.5 反转这个选择——发版只发 debug 包，理由有三条：
+
+1. 自动安装是主更新路径，它必须成功，而 debug 包能覆盖 debug 包；
+2. 只维护一种签名，`UpdateChecker` 不必再赌资产列表的顺序；
+3. debug 包带行号，崩溃栈可读。
+
+代价写在 README 顶部：从正式包（`com.lxmusic.android`）升级到 debug 包
+（`com.lxmusic.android.debug`）是**两个不同的 applicationId**，需要先卸载一次正式包。
+之后的所有版本都走 debug。
+
+`UpdateChecker.parseRelease` 的选包条件从
+`firstOrNull { !it.name.contains("debug") }` 改成
+`firstOrNull { it.name.contains("debug") }`，并保留 `?: candidates.firstOrNull()`
+的退路——1.4.5 之前的 release 只有正式包，那些版本仍要能被识别为「有更新」，
+不能因为选不到 debug 就整条链路失效。
+
+### 2. 删掉「启动时自动检查更新」开关与 24h 节流
+
+开关和节流叠在一起，实际效果是「用户以为在查，其实没查」：开关默认开着，但
+`lastUpdateCheckAt` 让第二次启动起就静默跳过。两个都想省网络请求的机制合起来
+产出一个只在第一次启动有效的功能。
+
+现在 `UpdateStore.checkOnStartup()` 只保留「状态不是 IDLE 就别重入」这一个守卫，
+每次进应用都查。静默语义不变：失败与「已是最新」都退回 IDLE，`UpdateCheckState`
+不往设置页塞用户没要的状态。
+
+连带删除：`AppSettings.autoCheckUpdates`、`KEY_AUTO_CHECK_UPDATES`、
+`setAutoCheckUpdates`、`MainViewModel.setAutoCheckUpdates`、
+`SettingsRoundTripTest.autoCheckUpdatesDefaultsOnAndSurvivesAWrite`。
+`lastUpdateCheckAt` 字段留着（备份文件里有它，删了旧备份会读不回）。
+
+### 3. 「随机播放第一次启动直接卡死」
+
+三个东西叠出来的，缺一个都不至于死：
+
+| 环节 | 做了什么 | 为什么致命 |
+| --- | --- | --- |
+| `QueueMirror.resync` | 每次队列变更都写 `t.shuffleModeEnabled = shuffleFlag()` | 写这个属性会走 `updatePlaybackInfo` → `onTimelineChanged` → 再装一次 order |
+| `onQueueMutated` | 同一处又调 `resetShuffle()` → `installShuffleOrder()` | 上面那条路之外，这里独立再装一次 |
+| `resetShuffle` | `shuffleState.invalidate()` | generation 一变 memo 守卫失效，**必然**再装一次 |
+| `installShuffleOrder` | `exo.setShuffleOrder(...)` → `createMaskingTimeline()` | 每装一次造一条新 timeline，跨进程 `MediaController` 把每轮放大成主线程停顿 |
+
+冷启动时 `restoreLastPlayed` → `prepareRestored`（队列缩到 1 首）→ 另一协程等
+首次扫描完成 → `backfillQueue`（队列膨胀到整库）→ `resetShuffle`。这三步正好
+把上面四条串在同一帧里。
+
+三处改动，见 README「V1.4.5」章节的代码块。要点：
+
+- **`resync` 只回写 `repeatMode`**。`shuffleModeEnabled` 的所有权归
+  `PlayerController.installShuffleOrder` 末尾那一句，两边都写就是两个主人。
+- **`resetShuffle` 不再 `invalidate()`**，改成 `forgetInstalledOrder()`。队列变长
+  变短时账本里那些旧下标已经被 `ShuffleMemo.slot` 的 `cached in 0 until size`
+  挡掉了，不需要整本作废。真正该「重新随机」的只有 `toggleShuffle`——用户按开关
+  那一下仍然 `invalidate()`。
+- **装 order 加熔断**：1 秒窗口内最多 4 次。正常路径一秒最多进两三次；某个还没
+  想到的边缘路径成环时，宁可这一轮不装（下次按键仍能走），也不能让主线程一直转。
+  打日志 `shuffle order install throttled`，真出现就说明还有别的环。
+
+`QueueMirror` 的构造参数因此少了一个 `shuffleFlag`——删掉参数比留一个没人用的
+lambda 诚实。
+
+### 4. 「切换样式一次性加载多次样式」
+
+`Crossfade` 在过渡期**同时组合两套舞台**，这是它作为「交叉溶解」的定义。两套舞台
+各自带一张 `AsyncImage`、一个 `Canvas`（唱片那套还有 30–50 圈凹槽循环）、一套
+`pointerInput`，200ms 里同时在跑，看起来就是「切一次、加载好几次」。
+
+改成顺序切换：
+
+```kotlin
+val stageAlpha = remember { Animatable(1f) }
+var shown by remember { mutableStateOf(skin) }
+LaunchedEffect(skin) {
+    if (skin == shown) return@LaunchedEffect
+    stageAlpha.animateTo(0f, tween(FADE_OUT_MS, easing = LinearEasing))  // 90ms
+    shown = skin
+    stageAlpha.animateTo(1f, tween(FADE_IN_MS, easing = LinearEasing))   // 150ms
+}
+```
+
+任一时刻只有一套舞台存在，`shown` 换掉时旧的那棵子树整体离开组合。总时长 240ms
+比原来的 200ms 略长，但其中只有一个瞬间存在两套舞台（就是 `shown = skin` 那一帧）。
+
+顺带：`pointerInput(sk)` → `pointerInput(Unit)`。水平拖动是舞台容器的手势，
+和里面画什么无关，没有理由随样式重建。
+
+### 5. 这一版没有做的事
+
+- **没做真机验证**。本机模拟器仍在 WHPX 初始化后静默退出（第二节），两个修复都是
+  靠单元测试 + 代码路径推导确认的。卡死问题的验证依赖 `shuffle order install
+  throttled` 这条日志：真机上一旦看到它，说明还有别的环没找到。
+- **没删 `versionedApk` 任务**。发版流程不跑它，但留着不碍事；彻底删掉会牵连
+  README 与 CI 的说明。
+- **没做「跳过这个版本」**。更新仍只有「下载并安装」与「稍后」两个出口。
+- **没改 24h 之外的其它更新行为**（下载续传、SHA-256 校验、NEEDS_PERMISSION 重试
+  三条都在 `UpdateStore` / `ApkDownloader` / `UpdateInstaller` 里原样保留）。

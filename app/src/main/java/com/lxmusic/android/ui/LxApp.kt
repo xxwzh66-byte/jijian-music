@@ -58,8 +58,8 @@ fun LxApp(viewModel: MainViewModel) {
     LaunchedEffect(viewModel) {
         viewModel.openNowPlaying.collect { viewModel.openNowPlayingCurtain() }
     }
-    // V1.0.3: 启动静默检查更新（每 24h 一次，见 MainViewModel.maybeCheckForUpdatesOnStartup）。
-    LaunchedEffect(viewModel) { viewModel.maybeCheckForUpdatesOnStartup() }
+    // V1.4.5: 每次启动都静默查一次更新（V1.0.3 的 24h 节流与「自动检查」开关都删了）。
+    LaunchedEffect(viewModel) { viewModel.checkForUpdatesOnStartup() }
     val updateState by viewModel.updateCheck.collectAsState()
     val updateInstall by viewModel.updateInstall.collectAsState()
     // V1.1.6: 五块幕布的开关从五个布尔值收成一条 Route 栈。这样详情页这类

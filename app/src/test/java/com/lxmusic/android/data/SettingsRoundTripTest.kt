@@ -119,16 +119,4 @@ class SettingsRoundTripTest {
         prefs[SettingsStore.KEY_SHOW_RECENT_RAIL] = false
         assertFalse(SettingsStore.readSettings(prefs).showRecentRail)
     }
-
-    @Test
-    fun autoCheckUpdatesDefaultsOnAndSurvivesAWrite() {
-        // V1.1.4: 默认开着（进 app 就查一次），关掉之后必须读回 false——
-        // 键名写错会静默退回默认 true，用户会以为开关没生效。
-        val fresh = SettingsStore.readSettings(emptyPreferences().toMutablePreferences())
-        assertTrue(fresh.autoCheckUpdates)
-
-        val prefs = emptyPreferences().toMutablePreferences()
-        prefs[SettingsStore.KEY_AUTO_CHECK_UPDATES] = false
-        assertFalse(SettingsStore.readSettings(prefs).autoCheckUpdates)
-    }
 }

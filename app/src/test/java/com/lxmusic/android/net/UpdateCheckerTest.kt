@@ -87,37 +87,38 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun theReleaseBuildWinsWhenBothApksArePublished() {
-        // 实际情况就是这样：debug 包在资产列表里排前面，而它用 debug key
-        // 签名，装到正式版上必然签名冲突，所以不能按顺序取第一个。
+    fun theDebugBuildWinsWhenBothApksArePublished() {
+        // V1.4.5 起只编译、只发布 debug 包：应用内安装装的必须和用户手里那份
+        // 同一个签名，所以哪怕 release 包排在后面也不能选它。
         val info = UpdateChecker.parseRelease(
             """
             {
-              "tag_name": "v1.1.6",
+              "tag_name": "v1.4.5",
               "assets": [
-                {"name": "jijian-music-1.1.6-vc11-debug.apk", "size": 23038164,
-                 "browser_download_url": "https://example/debug.apk",
-                 "digest": "sha256:aaa"},
-                {"name": "jijian-music-1.1.6-vc11.apk", "size": 15882842,
+                {"name": "jijian-music-1.4.5-vc20.apk", "size": 3559492,
                  "browser_download_url": "https://example/release.apk",
-                 "digest": "sha256:bbb"}
+                 "digest": "sha256:bbb"},
+                {"name": "jijian-music-1.4.5-vc20-debug.apk", "size": 23137800,
+                 "browser_download_url": "https://example/debug.apk",
+                 "digest": "sha256:aaa"}
               ]
             }
             """.trimIndent(),
         )
-        assertEquals("jijian-music-1.1.6-vc11.apk", info.apkName)
-        assertEquals(15882842L, info.apkSize)
-        assertEquals("https://example/release.apk", info.apkUrl)
-        assertEquals("sha256:bbb", info.apkDigest)
+        assertEquals("jijian-music-1.4.5-vc20-debug.apk", info.apkName)
+        assertEquals(23137800L, info.apkSize)
+        assertEquals("https://example/debug.apk", info.apkUrl)
+        assertEquals("sha256:aaa", info.apkDigest)
     }
 
     @Test
-    fun theDebugBuildIsStillUsableWhenItIsAllThereIs() {
+    fun anOlderReleaseWithoutADebugBuildIsStillUsable() {
+        // 1.4.5 之前的 release 只有正式包，退回任意 apk 总比「有更新但装不了」强。
         val info = UpdateChecker.parseRelease(
-            """{"tag_name":"v1.0.1","assets":[{"name":"app-debug.apk","size":5,
+            """{"tag_name":"v1.0.1","assets":[{"name":"jijian-music-1.0.1-vc2.apk","size":5,
                "browser_download_url":"https://example/a.apk"}]}""",
         )
-        assertEquals("app-debug.apk", info.apkName)
+        assertEquals("jijian-music-1.0.1-vc2.apk", info.apkName)
         assertEquals("https://example/a.apk", info.apkUrl)
     }
 

@@ -87,8 +87,14 @@ plugins {
 // 同时把播放页切样式的三处卡顿按「绘制阶段求值」处理：唱片旋转与长按拖动
 // 改走 graphicsLayer，歌词行不再动画字号（改成缩放），Crossfade 从 300ms
 // 收到 200ms。包名与签名不变，可从 1.4.2 覆盖安装。
-ext.appVersionCode = 19
-ext.appVersionName = "1.4.3"
+// V1.4.5: 只发 debug 包。release 包和 debug 包签名不同，「应用内自动安装」
+// 装上去必然签名冲突，所以这一版起 Release 只挂 -debug.apk，构建也只跑
+// versionedDebugApk。同时删掉「启动时自动检查更新」开关与 24h 节流（每次启动
+// 都静默查一次），设置页「更新」下新增「项目地址」。随机播放修两处：队列变更
+// 不再作废随机账本（少装一次 order），装 order 加了 1 秒 4 次的熔断；播放页
+// 切样式从 Crossfade 改成「先淡出、换、再淡入」，任一时刻只有一套舞台存在。
+ext.appVersionCode = 20
+ext.appVersionName = "1.4.5"
 
 android {
     namespace = "com.lxmusic.android"

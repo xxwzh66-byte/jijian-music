@@ -1,6 +1,8 @@
 # 极简music (JiJianMusic) for Android
 
-`applicationId = com.lxmusic.android` · 当前版本 **1.4.3** (`versionCode = 19`)
+`applicationId = com.lxmusic.android` · 当前版本 **1.4.5** (`versionCode = 20`)
+
+> **V1.4.5 起只编译、只发布 debug 版**（`com.lxmusic.android.debug`）。应用内的「下载并安装」装的就是同一个 debug 签名，能覆盖升级；正式包如果还留着旧版本，需要先卸载一次。
 
 一个**纯本地**的极简音乐播放器。起手参考
 [lyswhut/lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) 的音源架构，
@@ -46,13 +48,20 @@ export ANDROID_SDK_ROOT=/path/to/android-sdk
 ./gradlew :app:assembleDebug
 ```
 
-日常还有两个额外任务：
+发布只出一个包：
 
-- `:app:versionedApk` —— 另出一份 `build/apk/jijian-music-<versionName>-vc<versionCode>.apk`。
-  这个改名是必要的：QQ 等 IM 按**文件名 + 大小**去重，连续两次 `app-debug.apk`
-  字节长度常常一样，新包会被静默匹配成聊天里那个旧包。
-- `:app:versionedDebugApk` —— 同上，debug 版。**与上一个任务是两个独立任务**，
-  跑 `versionedApk assembleDebug` 不会产出带版本号的 debug 名。
+```bash
+./gradlew :app:versionedDebugApk
+# → build/apk/jijian-music-<versionName>-vc<versionCode>-debug.apk
+```
+
+**V1.4.5 起不再构建 release 包**（`versionedApk` 任务还在，但发版流程不跑它）。
+原因是应用内的「下载并安装」必须和用户手里那份同一个签名：release 包用
+`jijian.keystore`、debug 包用 debug key，装上去必然签名冲突。既然自动安装是主要
+更新路径，就统一发 debug 包——它同时也让崩溃栈带行号。
+
+`:app:versionedDebugApk` 的改名是必要的：QQ 等 IM 按**文件名 + 大小**去重，
+连续两次 `app-debug.apk` 字节长度常常一样，新包会被静默匹配成聊天里那个旧包。
 
 Windows 上如果路径含中文，会因 `sun.jnu.encoding=GBK` 读错 Gradle 的 UTF-8
 argfile，让单测全部 `ClassNotFoundException`；用 `subst` 把父目录映射成 ASCII
@@ -162,7 +171,7 @@ app/src/main/java/com/lxmusic/android/
 ./gradlew :app:testDebugUnitTest
 ```
 
-**418 项单元测试 / 41 个类 / 0 失败。**
+**417 项单元测试 / 41 个类 / 0 失败。**
 
 纯逻辑优先：抽签、队列、歌词解析、设置键往返、备份指纹、扫描复用、搜索索引、
 可访问性文案、平板右栏归属都是不需要 Android 的纯函数。`RandomShuffle*` 五个类
@@ -177,45 +186,73 @@ app/src/main/java/com/lxmusic/android/
 
 ---
 
-## V1.4.3 — 同一个答案答给所有人 (`versionCode = 19`)
+## V1.4.5 — 只发 debug，启动就查，切样式不再叠两次 (`versionCode = 20`)
 
-**随机播放「一开就卡在同一首」，根因是两个。** 抽样缓存原本是单槽位：一次换歌
-里 media3 会用不同的 `current` 问好几遍（通知栏要当前曲的下一首、`MediaPeriodQueue`
-要预览后面几首、自动续播再问一次），后一个答案把前一个覆盖掉，同一时刻两个屏幕
-可能拿到互相矛盾的下标。更要命的是 `copy()` 给克隆体的是**快照**，而真正装进
-ExoPlayer、替通知栏作答的正是那份克隆体——它永远收不到 `onTrackStarted`，于是
-一直把换歌前抽的那个下标交出来。「下一首」于是每次都落在同一首歌上。
+**四件产品决定。**
 
-现在缓存是一本按 `current` 分槽的账（`ShuffleMemo`），副本与父实例**共享同一本**：
-父实例清账，克隆体同步变盲，两边一起重抽。
+「启动时自动检查更新」这个开关连它背后的 24 小时节流一起删了。开关加节流的
+实际效果是「用户以为在查，其实没查」——两个都想省网络请求的机制叠在一起，变成
+一个只在第一次启动有效的功能。现在每次进应用都静默查一次，失败和「已是最新」
+仍然退回 IDLE，不往设置页塞一条用户没要的状态。
+
+「更新」分区里加了**项目地址**，点了直接开
+`https://github.com/xxwzh66-byte/jijian-music`。
+
+发版只发 debug 包（见上面「构建」）。`UpdateChecker.parseRelease` 的选包逻辑随之
+反转：从「优先 release 包」改成「优先 debug 包」，只在老 release 没有 debug 资产时
+才退回任意 apk。
+
+**两个真 bug。**
+
+「随机播放第一次启动直接卡死」是三个东西叠出来的：`QueueMirror.resync` 每次队列
+变更都回写 `shuffleModeEnabled`，而 `onQueueMutated` 本身又会触发一次安装——两条路
+各自把 ExoPlayer 的 timeline 重建一遍；`resetShuffle` 还会 `invalidate()` 随机账本，
+generation 一变 memo 守卫立刻失效，于是又必然多装一次；而装一次 order 就是造一条
+新的 masking timeline，跨进程的 `MediaController` 再把每一轮放大成主线程停顿。
+冷启动时 `backfillQueue` 正好把这些串在同一帧里发生。
+
+三处改动：
 
 ```kotlin
-@Synchronized fun copy(): RandomShuffleState = RandomShuffleState().also { clone ->
-    clone.memo = memo
-    clone.generation = generation
+// QueueMirror：只回写 repeatMode，shuffle 交给它的主人
+private fun resync(t: MirrorTarget) {
+    t.repeatMode = repeatFlag()
+    onQueueMutated()
 }
+
+// PlayerController：队列变更不再作废随机账本
+private fun resetShuffle() {
+    forgetInstalledOrder()
+    installShuffleOrder()
+}
+
+// PlayerController：装 order 的熔断（1 秒 4 次）
+if (++installWindowCount > MAX_INSTALLS_PER_WINDOW) return false
 ```
 
-上一版把「快照」当契约写进了测试，这次把那条用例改写为
-`aCopySharesTheMemoSoBothSidesGoStaleTogether`——**契约变了，测试必须跟着改，
-而不是反过来**。
+队列变短时账本里的旧下标已经被 `ShuffleMemo.slot` 的 `cached in 0 until size` 挡掉，
+不需要整本作废；真正该「重新随机」的只有用户自己按开关那一下
+（`toggleShuffle` 仍然 `invalidate()`）。熔断是兜底：正常一秒最多进两三次，边缘
+路径成环时宁可这一轮不装，也不能让主线程一直转。
 
-**播放页切样式的三处卡顿，全部是「在 composition 里读动画值」。**
+「切换样式一次性加载多次样式」的根因是 `Crossfade`：过渡期它同时组合**两套舞台**，
+唱片（凹槽 Canvas 30–50 圈 `drawCircle` + 封面 + 唱臂）和歌词列表（LazyColumn +
+每行两个动画）一起在跑，连 `pointerInput(sk)` 都各自重建一次。改成「先淡出、换、
+再淡入」之后，任一时刻只有一套舞台存在：
 
-| 位置 | 原来 | 现在 |
-| --- | --- | --- |
-| `RotatingArtwork` 唱片 | `.rotate(rotation.value)` | `.graphicsLayer { rotationZ = ... }` |
-| `RotatingArtwork` 唱臂 | `drop: Float` 参数 | `drop: () -> Float`，Canvas 内求值 |
-| `LyricView` 歌词行 | 动画 `fontSize` / `lineHeight` | 动画 `scaleX/scaleY`，字号固定 |
-| `NowPlayingScreen` 切台 | Crossfade 默认 300ms | `tween(200)` |
+```kotlin
+stageAlpha.animateTo(0f, tween(FADE_OUT_MS, LinearEasing))
+shown = skin
+stageAlpha.animateTo(1f, tween(FADE_IN_MS, LinearEasing))
+```
 
-读进 composition 意味着载体每帧重组：唱片那棵子树里有一次 30–50 圈的凹槽
-`drawCircle` 循环、一张封面和主轴孔，60fps 下等于每秒重建 60 次。字号是布局
-属性，动画它等于每帧重新排版一行字；改成缩放后只有绘制阶段变化。
+顺带把滑动切歌的 `pointerInput` 从 `pointerInput(sk)` 改成 `pointerInput(Unit)`——
+它是舞台容器的手势，和里面画什么无关，没有理由随样式重建。
 
-**415 → 418 项**：`RandomShuffleStateTest` 重写 1 条、新增 1 条（每个 `current`
-各有槽位），`RandomShuffleCloneTest` 删 1 条、新增 2 条（克隆体也听得到
-`onTrackStarted`、`invalidate` 让克隆体一起变盲）。
+**418 → 417 项**：删掉 `autoCheckUpdates` 的往返用例（那个偏好已经不存在），
+`QueueMirrorTest.everyEditResetsBothModes` 改名为
+`everyEditResetsRepeatModeButLeavesShuffleToItsOwner`（契约变了，测试跟着改），
+`UpdateCheckerTest` 两条选包用例按 debug 优先重写。
 
 ---
 

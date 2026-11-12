@@ -75,7 +75,6 @@ class QueueMirrorTest {
             currentSlot = { current },
             selectSlot = { current = it },
             repeatFlag = { Player.REPEAT_MODE_ALL },
-            shuffleFlag = { true },
             isPlaying = { playing },
             onQueueMutated = onMutated,
         )
@@ -272,7 +271,10 @@ class QueueMirrorTest {
     }
 
     @Test
-    fun everyEditResetsBothModes() {
+    fun everyEditResetsRepeatModeButLeavesShuffleToItsOwner() {
+        // V1.4.5: resync 只回写 repeatMode。shuffleModeEnabled 由
+        // PlayerController.installShuffleOrder 统一写入——两边都写会让每次队列
+        // 变更都多触发一轮 onTimelineChanged，冷启动时那串同步 rebuild 就是卡死。
         val list = listOf(track("a"), track("b"), track("c"))
         val (m, t, _) = mirror(list)
         m.replace(list, 0)
@@ -280,7 +282,7 @@ class QueueMirrorTest {
 
         m.move(0, 1)
         assertTrue("a rebuild clears repeat mode", t.calls.contains("repeat=${Player.REPEAT_MODE_ALL}"))
-        assertTrue("a rebuild clears shuffle mode", t.calls.contains("shuffle=true"))
+        assertFalse("shuffle stays with the shuffle owner", t.calls.contains("shuffle=true"))
     }
 
     @Test

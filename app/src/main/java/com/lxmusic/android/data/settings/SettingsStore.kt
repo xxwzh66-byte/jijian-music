@@ -82,9 +82,6 @@ data class AppSettings(
      */
     val lastUpdateCheckAt: Long = 0L,
 
-    /** V1.1.4: 进入应用时自动检查更新。关掉之后只有设置页按钮会发起检查。 */
-    val autoCheckUpdates: Boolean = true,
-
     /**
      * V1.4.1: 首页「最近在听」那一排封面。
      *
@@ -185,9 +182,6 @@ class SettingsStore private constructor(context: Context) {
 
     /** V1.0.3: 静默检查更新的节流时间戳（写入时机由调用方决定，这里只存）。 */
     fun setLastUpdateCheckAt(atMs: Long) = edit { it[KEY_LAST_UPDATE_CHECK] = atMs }
-
-    /** V1.1.4: 进应用时自动检查更新。 */
-    fun setAutoCheckUpdates(on: Boolean) = edit { it[KEY_AUTO_CHECK_UPDATES] = on }
 
     fun setPendingDeletes(ids: Set<String>) = edit { it[KEY_PENDING_DELETES] = ids }
 
@@ -290,7 +284,6 @@ class SettingsStore private constructor(context: Context) {
             prefs[KEY_EQ_VIRTUALIZER] = s.eq.virtualizer
             prefs[KEY_EQ_LOUDNESS] = s.eq.loudnessMb
             prefs[KEY_LAST_UPDATE_CHECK] = s.lastUpdateCheckAt
-            prefs[KEY_AUTO_CHECK_UPDATES] = s.autoCheckUpdates
             prefs[KEY_SHOW_RECENT_RAIL] = s.showRecentRail
             prefs[KEY_PENDING_DELETES] = s.pendingDeletes
             prefs[KEY_WATCHDOG_STALL] = s.watchdogStallMs
@@ -333,7 +326,6 @@ class SettingsStore private constructor(context: Context) {
                 loudnessMb = this[KEY_EQ_LOUDNESS] ?: 0,
             ),
             lastUpdateCheckAt = this[KEY_LAST_UPDATE_CHECK] ?: 0L,
-            autoCheckUpdates = this[KEY_AUTO_CHECK_UPDATES] ?: true,
             showRecentRail = this[KEY_SHOW_RECENT_RAIL] ?: true,
             pendingDeletes = this[KEY_PENDING_DELETES] ?: emptySet(),
             watchdogStallMs = this[KEY_WATCHDOG_STALL] ?: 8_000L,
@@ -368,7 +360,6 @@ class SettingsStore private constructor(context: Context) {
 
         /** V1.0.3: 启动静默检查更新的节流时间戳。 */
         internal val KEY_LAST_UPDATE_CHECK = longPreferencesKey("last_update_check_at")
-        internal val KEY_AUTO_CHECK_UPDATES = booleanPreferencesKey("auto_check_updates")
         internal val KEY_SHOW_RECENT_RAIL = booleanPreferencesKey("show_recent_rail")
         internal val KEY_PENDING_DELETES = stringSetPreferencesKey("pending_deletes")
         internal val KEY_WATCHDOG_STALL = longPreferencesKey("watchdog_stall_ms")

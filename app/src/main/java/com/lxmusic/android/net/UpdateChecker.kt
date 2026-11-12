@@ -84,10 +84,9 @@ class UpdateChecker(
             val tag = str("tag_name")
             val assets = root.get("assets")?.takeIf { it.isJsonArray }?.asJsonArray
 
-            // Every release publishes two APKs, and the debug one is listed
-            // first. It is signed with the debug key, so handing it to the
-            // installer produces a signature clash instead of an upgrade -
-            // pick the release build whenever the release has one.
+            // V1.4.5 起只编译、只发布 debug 包（见 README）。这里优先挑 debug，
+            // 因为「应用内自动安装」装的必须和用户手里那份同一个签名；没有 debug
+            // 资产时再退回任意 apk，免得老版本 release 变成装不上。
             val candidates = ArrayList<ApkAsset>(2)
             assets?.forEach { el ->
                 val o = el.asJsonObject
@@ -104,7 +103,7 @@ class UpdateChecker(
                     )
                 }
             }
-            val apk = candidates.firstOrNull { !it.name.contains("debug", ignoreCase = true) }
+            val apk = candidates.firstOrNull { it.name.contains("debug", ignoreCase = true) }
                 ?: candidates.firstOrNull()
 
             return UpdateInfo(

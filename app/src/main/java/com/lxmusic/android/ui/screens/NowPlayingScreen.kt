@@ -1,7 +1,8 @@
 package com.lxmusic.android.ui.screens
 
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -54,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -87,6 +89,10 @@ import com.lxmusic.android.ui.neon.NeonTokens
 import com.lxmusic.android.ui.neon.neonGlass
 import com.lxmusic.android.ui.neon.neonChip
 import com.lxmusic.android.ui.neon.rememberMotionEnabled
+
+/** V1.4.5: 舞台换样式时的淡出/淡入时长，顺序播放而不是叠加。 */
+private const val FADE_OUT_MS = 90
+private const val FADE_IN_MS = 150
 
 /**
  * V6.0 「Neon Vinyl」全屏播放页。
@@ -181,37 +187,49 @@ fun NowPlayingScreen(
 
             // ---------- 中央舞台 ----------
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Crossfade(
-                    targetState = skin,
-                    // V1.4.3: 默认 300ms 期间两套舞台（封面 + Canvas + 动画）同时
-                    // 在跑，正是切样式那一下的卡顿来源。200ms 已经够遮住切换。
-                    animationSpec = tween(200),
-                    label = "skin",
-                ) { sk ->
-                    val swipe = Modifier.pointerInput(sk) {
-                        var acc = 0f
-                        detectHorizontalDragGestures(
-                            onDragStart = { acc = 0f },
-                            onDragEnd = {
-                                if (acc <= -90f) onNext() else if (acc >= 90f) onPrev()
-                                acc = 0f
-                            },
-                            onHorizontalDrag = { _, delta -> acc += delta },
+                // V1.4.5: 从 Crossfade 换成「先淡出、换、再淡入」。
+                //
+                // Crossfade 在过渡期会同时组合两套舞台：唱片（凹槽 Canvas +
+                // 封面 + 唱臂）和歌词列表（LazyColumn + 每行两个动画）同时在
+                // 跑，还会各自重建 pointerInput。用户看到的就是「切一次、加载
+                // 好几次样式」。顺序切换任一时刻只有一套舞台存在。
+                val stageAlpha = remember { Animatable(1f) }
+                var shown by remember { mutableStateOf(skin) }
+                LaunchedEffect(skin) {
+                    if (skin == shown) return@LaunchedEffect
+                    stageAlpha.animateTo(0f, tween(FADE_OUT_MS, easing = LinearEasing))
+                    shown = skin
+                    stageAlpha.animateTo(1f, tween(FADE_IN_MS, easing = LinearEasing))
+                }
+                // 手势不随 skin 重建：它是舞台容器的手势，和里面画什么无关。
+                val swipe = Modifier.pointerInput(Unit) {
+                    var acc = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { acc = 0f },
+                        onDragEnd = {
+                            if (acc <= -90f) onNext() else if (acc >= 90f) onPrev()
+                            acc = 0f
+                        },
+                        onHorizontalDrag = { _, delta -> acc += delta },
+                    )
+                }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .then(swipe)
+                        .graphicsLayer { alpha = stageAlpha.value },
+                ) {
+                    when (shown) {
+                        PlayerSkin.LYRICS -> LyricsStage(state, lyricFontScale, listState, onSeek, themeColor)
+                        else -> VinylStage(
+                            state = state,
+                            scheme = scheme,
+                            lyricFontScale = lyricFontScale,
+                            listState = listState,
+                            onSeek = onSeek,
+                            themeColor = themeColor,
+                            animate = motion,
                         )
-                    }
-                    Box(Modifier.fillMaxSize().then(swipe)) {
-                        when (sk) {
-                            PlayerSkin.LYRICS -> LyricsStage(state, lyricFontScale, listState, onSeek, themeColor)
-                            else -> VinylStage(
-                                state = state,
-                                scheme = scheme,
-                                lyricFontScale = lyricFontScale,
-                                listState = listState,
-                                onSeek = onSeek,
-                                themeColor = themeColor,
-                                animate = motion,
-                            )
-                        }
                     }
                 }
             }

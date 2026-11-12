@@ -138,7 +138,6 @@ class PlayerController(
         currentSlot = { currentIndex },
         selectSlot = { currentIndex = it },
         repeatFlag = { repeatMode.toPlayerRepeatMode() },
-        shuffleFlag = { shuffle },
         isPlaying = { _state.value.isPlaying },
         onQueueMutated = { resetShuffle() },
     ).also { it.target = PlayerTarget { controller } }
@@ -719,14 +718,19 @@ class PlayerController(
     }
 
     /**
-     * V5.3.1: (re)start the random pass and publish the policy to ExoPlayer.
+     * V5.3.1: publish the random policy to ExoPlayer after the queue changed.
      *
-     * Called whenever the queue itself changes (new queue, reorder, insert,
-     * remove), because a pass counter measured against the old queue length
-     * means nothing once the queue has a different size.
+     * V1.4.5: 这里**不再** `shuffleState.invalidate()`。
+     *
+     * 队列变长变短，账本里那些旧下标已经被 `ShuffleMemo.slot` 的
+     * `cached in 0 until size` 挡掉了，不需要把整本账作废。而作废会 bump
+     * generation，generation 一变 memo 守卫就失效，于是必然多装一次 order，
+     * 多一次 masking timeline —— 冷启动时这一步和 `backfillQueue` 叠在一起，
+     * 就是「第一次启动直接卡死」。用户主动开关随机（[toggleShuffle]）仍然
+     * 会作废，那才是真的「重新随机」。
      */
     private fun resetShuffle() {
-        shuffleState.invalidate()
+        forgetInstalledOrder()
         installShuffleOrder()
     }
 
@@ -754,6 +758,20 @@ class PlayerController(
      */
     private fun installShuffleOrder(): Boolean {
         if (installingShuffleOrder) return false
+        // V1.4.5 熔断：装一次 order 会造一条新的 masking timeline，跨进程的
+        // MediaController 又把每一轮放大成主线程停顿。正常情况下这里一秒最多
+        // 进两三次；一旦某个边缘路径（队列在扫描过程中反复回填）让它成环，
+        // 用户看到的就是「启动直接卡死」。宁可这一轮不装（下次按键仍能走），
+        // 也不能让主线程一直转。
+        val nowMs = System.currentTimeMillis()
+        if (nowMs - installWindowStartMs >= INSTALL_WINDOW_MS) {
+            installWindowStartMs = nowMs
+            installWindowCount = 0
+        }
+        if (++installWindowCount > MAX_INSTALLS_PER_WINDOW) {
+            Log.e(TAG, "shuffle order install throttled: $installWindowCount in ${INSTALL_WINDOW_MS}ms")
+            return false
+        }
         val exo = PlayerHolder.player ?: return false
         if (!shuffle || queue.isEmpty()) return false
         val length = exo.mediaItemCount
@@ -819,6 +837,10 @@ class PlayerController(
 
     /** Guards [installShuffleOrder] against re-entry from its own timeline event. */
     private var installingShuffleOrder = false
+
+    /** V1.4.5: 安装节流窗口，见 [installShuffleOrder]。 */
+    private var installWindowStartMs = 0L
+    private var installWindowCount = 0
 
     /**
      * V6.1: generation of the order currently installed in ExoPlayer, and the
@@ -1048,5 +1070,9 @@ class PlayerController(
 
     private companion object {
         const val TAG = "PlayerController"
+
+        /** V1.4.5: 装 order 的节流窗口。 */
+        const val INSTALL_WINDOW_MS = 1_000L
+        const val MAX_INSTALLS_PER_WINDOW = 4
     }
 }
